@@ -2,9 +2,8 @@ package mg.miniframework.controller;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.io.PrintWriter;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -13,7 +12,6 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -28,6 +26,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
 import mg.miniframework.config.RouteMap;
+import mg.miniframework.modules.ModelView;
 import mg.miniframework.modules.Url;
 
 @WebFilter(filterName = "resourceExistenceFilter", urlPatterns = "/*")
@@ -44,8 +43,9 @@ public class FilterServlet implements Filter {
 		HttpServletRequest req = (HttpServletRequest) request;
 		HttpServletResponse resp = (HttpServletResponse) response;
 		PrintWriter out = resp.getWriter();
+		// req.getServletContext().setAttribute(null, out);
 
-		if (req.getSession().getAttribute("routeMap") == null) {
+		if(req.getServletContext().getAttribute("routeMap")==null){
 			try {
 				RouteMap routeMap = new RouteMap();
 				List<Class<?>> controllers = trouverClassesAvecAnnotation(Controller.class);
@@ -53,13 +53,13 @@ public class FilterServlet implements Filter {
 				for (Class<?> class1 : controllers) {
 					routeMap.addController(class1);
 				}
-				req.getSession().setAttribute("routeMap", routeMap);
+				req.getServletContext().setAttribute("routeMap", routeMap);				
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
 
-		RouteMap routeMap = (RouteMap) req.getSession().getAttribute("routeMap");
+		RouteMap routeMap = (RouteMap) req.getServletContext().getAttribute("routeMap");
 
 		String requestUri = req.getRequestURI();
 		String contextPath = req.getContextPath();
@@ -69,8 +69,24 @@ public class FilterServlet implements Filter {
 		boolean urlExists = false;
 		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
 			Url url = entry.getKey();
+			Method method = entry.getValue();
 			if (url.getUrlPath().equals(urlPath) && url.getMethod().toString().equalsIgnoreCase(httpMethod)) {
 				urlExists = true;
+				out.print("class :"+method.getDeclaringClass().getName() + " method:"+method.getName());
+
+				try {
+				 	Object result = invokeCorrespondingMethod(method,method.getDeclaringClass());
+					if(result instanceof String){
+						out.print(result);
+					}else if(result instanceof ModelView){
+						ModelView modelView = (ModelView) result;
+						String jspFile = modelView.getView();
+						out.print(jspFile);
+					}
+				} catch (InstantiationException | IllegalAccessException | IllegalArgumentException
+						| InvocationTargetException | NoSuchMethodException | SecurityException e) {
+					e.printStackTrace();
+				}
 				break;
 			}
 		}
@@ -91,6 +107,12 @@ public class FilterServlet implements Filter {
 		}
 
 		chain.doFilter(request, response);
+	}
+
+	private Object invokeCorrespondingMethod(Method method,Class<?> clazz) throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException, NoSuchMethodException, SecurityException{
+		Object instance = clazz.getDeclaredConstructor().newInstance();
+		Object result = method.invoke(instance);
+		return result;
 	}
 
 	private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass) throws Exception {
