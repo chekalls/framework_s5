@@ -26,7 +26,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
 import mg.miniframework.config.RouteMap;
-import mg.miniframework.modules.ModelView;
+// import mg.miniframework.modules.ModelView;
 import mg.miniframework.modules.Url;
 
 @WebFilter(filterName = "resourceExistenceFilter", urlPatterns = "/*")
@@ -78,11 +78,11 @@ public class FilterServlet implements Filter {
 				 	Object result = invokeCorrespondingMethod(method,method.getDeclaringClass());
 					if(result instanceof String){
 						out.print(result);
-					}else if(result instanceof ModelView){
+					}/* else if(result instanceof ModelView){
 						ModelView modelView = (ModelView) result;
 						String jspFile = modelView.getView();
 						out.print(jspFile);
-					}
+					} */
 				} catch (InstantiationException | IllegalAccessException | IllegalArgumentException
 						| InvocationTargetException | NoSuchMethodException | SecurityException e) {
 					e.printStackTrace();
