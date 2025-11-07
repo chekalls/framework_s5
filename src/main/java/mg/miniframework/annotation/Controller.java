@@ -5,5 +5,5 @@ import java.lang.annotation.RetentionPolicy;
 
 @Retention(RetentionPolicy.RUNTIME)
 public @interface Controller{
-    String mapping() default "";
+    String mapping() default "/";
 }

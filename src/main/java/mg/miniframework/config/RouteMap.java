@@ -16,6 +16,7 @@ public class RouteMap {
 
     public RouteMap(){
         methodMaps = new HashMap<>();
+        urlMethodsMap = new HashMap<>();
     }
 
     public void addController(Class<?> controller) {
@@ -27,10 +28,28 @@ public class RouteMap {
             if (m.isAnnotationPresent(mg.miniframework.annotation.UrlMap.class)) {
                 UrlMap urlMapAnnotation = m.getAnnotation(UrlMap.class);
                 annotatedMethods.add(m);
-                urlMethodsMap.put(new Url(baseUrl+urlMapAnnotation.value(),urlMapAnnotation.method()), m);
+                
+                String fullUrl = normalizeUrl(baseUrl, urlMapAnnotation.value());
+                
+                urlMethodsMap.put(new Url(fullUrl, urlMapAnnotation.method()), m);
             }
         }
         methodMaps.put(controller, annotatedMethods);
+    }
+    
+    private String normalizeUrl(String baseUrl, String path) {
+        if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        
+        if (!path.startsWith("/")) {
+            path = "/" + path;
+        }
+        
+        String fullUrl = baseUrl + path;
+        fullUrl = fullUrl.replaceAll("/+", "/");
+        
+        return fullUrl;
     }
 
     public Map<Class<?>, List<Method>> getMethodMaps() {

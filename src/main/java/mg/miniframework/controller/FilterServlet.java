@@ -27,6 +27,8 @@ import jakarta.servlet.annotation.WebFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
+import mg.miniframework.config.RouteMap;
+import mg.miniframework.modules.Url;
 
 @WebFilter(filterName = "resourceExistenceFilter", urlPatterns = "/*")
 public class FilterServlet implements Filter {
@@ -41,77 +43,84 @@ public class FilterServlet implements Filter {
 
 		HttpServletRequest req = (HttpServletRequest) request;
 		HttpServletResponse resp = (HttpServletResponse) response;
+		PrintWriter out = resp.getWriter();
 
-		// Vérifie si les controllers sont déjà en session
-		if (req.getSession().getAttribute("controllersMap") == null) {
+		if (req.getSession().getAttribute("routeMap") == null) {
 			try {
+				RouteMap routeMap = new RouteMap();
 				List<Class<?>> controllers = trouverClassesAvecAnnotation(Controller.class);
-				Map<Class<?>, List<Method>> map = new HashMap<>();
 
-				for (Class<?> cls : controllers) {
-					List<Method> annotatedMethods = new ArrayList<>();
-					for (Method m : cls.getDeclaredMethods()) {
-						if (m.isAnnotationPresent(mg.miniframework.annotation.UrlMap.class)) {
-							annotatedMethods.add(m);
-						}
-					}
-					map.put(cls, annotatedMethods);
+				for (Class<?> class1 : controllers) {
+					routeMap.addController(class1);
 				}
-
-				req.getSession().setAttribute("controllersMap", map);
-				System.out.println("Controllers et méthodes UrlMap stockés en session : " + map.size());
+				req.getSession().setAttribute("routeMap", routeMap);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
 
-		@SuppressWarnings("unchecked")
-		Map<Class<?>, List<Method>> controllersMap = (Map<Class<?>, List<Method>>) req.getSession()
-				.getAttribute("controllersMap");
+		RouteMap routeMap = (RouteMap) req.getSession().getAttribute("routeMap");
 
-		PrintWriter out = resp.getWriter();
-		out.println("<h3>Controllers et méthodes @UrlMap :</h3>");
-		for (Map.Entry<Class<?>, List<Method>> entry : controllersMap.entrySet()) {
-			Class<?> cls = entry.getKey();
-			List<Method> methods = entry.getValue();
-			out.println("<b>" + cls.getName() + "</b>");
-			for (Method m : methods) {
-				mg.miniframework.annotation.UrlMap urlMap = m.getAnnotation(mg.miniframework.annotation.UrlMap.class);
-				out.println("<div>→ " + m.getName() + " : " + urlMap.value() + "</div>");
+		String requestUri = req.getRequestURI();
+		String contextPath = req.getContextPath();
+		String urlPath = requestUri.substring(contextPath.length());
+		String httpMethod = req.getMethod();
+
+		boolean urlExists = false;
+		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
+			Url url = entry.getKey();
+			if (url.getUrlPath().equals(urlPath) && url.getMethod().toString().equalsIgnoreCase(httpMethod)) {
+				urlExists = true;
+				break;
 			}
 		}
 
-		// chain.doFilter(request, response);
+		if (!urlExists) {
+			resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+			out.println("<html><body>");
+			out.println("<h1>404 - Page Not Found</h1>");
+			out.println("<p>L'URL <b>" + urlPath + "</b> avec la méthode <b>" + httpMethod + "</b> n'existe pas.</p>");
+			out.println("<p>Routes disponibles :</p>");
+			out.println("<ul>");
+			for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
+				out.println("<li>" + entry.getKey().getMethod() + " " + entry.getKey().getUrlPath() + " -> " + entry.getValue().getName() + "</li>");
+			}
+			out.println("</ul>");
+			out.println("</body></html>");
+			return;
+		}
+
+		chain.doFilter(request, response);
 	}
 
 	private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass) throws Exception {
-        List<Class<?>> resultat = new ArrayList<>();
-        String classesPath = getClass().getClassLoader().getResource("").getPath();
-        Path basePath = Paths.get(classesPath);
+		List<Class<?>> resultat = new ArrayList<>();
+		String classesPath = getClass().getClassLoader().getResource("").getPath();
+		Path basePath = Paths.get(classesPath);
 
-        Files.walkFileTree(basePath, new SimpleFileVisitor<Path>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                if (file.toString().endsWith(".class")) {
-                    String relativePath = basePath.relativize(file).toString();
-                    String className = relativePath
-                            .replace(File.separator, ".")
-                            .replaceAll("\\.class$", "");
-                    try {
-                        Class<?> clazz = Class.forName(className);
-                        if (clazz.isAnnotationPresent(annotationClass.asSubclass(java.lang.annotation.Annotation.class))) {
-                            resultat.add(clazz);
-                        }
-                    } catch (Throwable t) {
-                        Ignore les classes non chargées
-                    }
-                }
-                return FileVisitResult.CONTINUE;
-            }
-        });
+		Files.walkFileTree(basePath, new SimpleFileVisitor<Path>() {
+			@Override
+			public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+				if (file.toString().endsWith(".class")) {
+					String relativePath = basePath.relativize(file).toString();
+					String className = relativePath
+							.replace(File.separator, ".")
+							.replaceAll("\\.class$", "");
+					try {
+						Class<?> clazz = Class.forName(className);
+						if (clazz.isAnnotationPresent(
+								annotationClass.asSubclass(java.lang.annotation.Annotation.class))) {
+							resultat.add(clazz);
+						}
+					} catch (Throwable t) {
+					}
+				}
+				return FileVisitResult.CONTINUE;
+			}
+		});
 
-        return resultat;
-    }
+		return resultat;
+	}
 
 	@Override
 	public void destroy() {
