@@ -29,7 +29,7 @@ public class RouteMap {
                 UrlMap urlMapAnnotation = m.getAnnotation(UrlMap.class);
                 annotatedMethods.add(m);
                 
-                String fullUrl = normalizeUrl(baseUrl, urlMapAnnotation.value());
+                    String fullUrl = normalizeUrl(baseUrl, urlMapAnnotation.value());
                 
                 urlMethodsMap.put(new Url(fullUrl, urlMapAnnotation.method()), m);
             }
