@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,7 +27,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
 import mg.miniframework.config.RouteMap;
-// import mg.miniframework.modules.ModelView;
+import mg.miniframework.modules.ModelView;
 import mg.miniframework.modules.Url;
 
 @WebFilter(filterName = "resourceExistenceFilter", urlPatterns = "/*")
@@ -78,11 +79,11 @@ public class FilterServlet implements Filter {
 				 	Object result = invokeCorrespondingMethod(method,method.getDeclaringClass());
 					if(result instanceof String){
 						out.print(result);
-					}/* else if(result instanceof ModelView){
+					}else if(result instanceof ModelView){
 						ModelView modelView = (ModelView) result;
 						String jspFile = modelView.getView();
 						out.print(jspFile);
-					} */
+					}
 				} catch (InstantiationException | IllegalAccessException | IllegalArgumentException
 						| InvocationTargetException | NoSuchMethodException | SecurityException e) {
 					e.printStackTrace();
@@ -111,7 +112,11 @@ public class FilterServlet implements Filter {
 
 	private Object invokeCorrespondingMethod(Method method,Class<?> clazz) throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException, NoSuchMethodException, SecurityException{
 		Object instance = clazz.getDeclaredConstructor().newInstance();
+		Parameter[] parameters = method.getParameters();
+		
+
 		Object result = method.invoke(instance);
+
 		return result;
 	}
 
