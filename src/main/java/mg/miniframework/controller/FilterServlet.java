@@ -2,6 +2,7 @@ package mg.miniframework.controller;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -12,12 +13,16 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.stream.Collectors;
 
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.FilterConfig;
+import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
@@ -36,6 +41,7 @@ public class FilterServlet implements Filter {
 	public void init(FilterConfig filterConfig) throws ServletException {
 	}
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
 			throws IOException, ServletException {
@@ -43,9 +49,27 @@ public class FilterServlet implements Filter {
 		HttpServletRequest req = (HttpServletRequest) request;
 		HttpServletResponse resp = (HttpServletResponse) response;
 		PrintWriter out = resp.getWriter();
-		// req.getServletContext().setAttribute(null, out);
+		ServletContext servletContext = req.getServletContext();
 
-		if(req.getServletContext().getAttribute("routeMap")==null){
+		// File currentDir = new File(".");
+
+		// File[] files = currentDir.listFiles();
+		// if (files != null) {
+		// 	for (File f : files) {
+		// 		out.println(f.getName());
+		// 	}
+		// }
+
+		if (servletContext.getAttribute("settingMap") == null) {
+			servletContext.setAttribute("settingMap", getSettingFromProperties());
+		}
+
+		Map<String, String> mapSetting = (Map<String, String>) servletContext.getAttribute("settingMap");
+		if (mapSetting.containsKey("jsp_base_path")) {
+			out.print(mapSetting.get("jsp_base_path"));
+		}
+
+		if (servletContext.getAttribute("routeMap") == null) {
 			try {
 				RouteMap routeMap = new RouteMap();
 				List<Class<?>> controllers = trouverClassesAvecAnnotation(Controller.class);
@@ -53,13 +77,13 @@ public class FilterServlet implements Filter {
 				for (Class<?> class1 : controllers) {
 					routeMap.addController(class1);
 				}
-				req.getServletContext().setAttribute("routeMap", routeMap);				
+				servletContext.setAttribute("routeMap", routeMap);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
 
-		RouteMap routeMap = (RouteMap) req.getServletContext().getAttribute("routeMap");
+		RouteMap routeMap = (RouteMap) servletContext.getAttribute("routeMap");
 
 		String requestUri = req.getRequestURI();
 		String contextPath = req.getContextPath();
@@ -72,13 +96,13 @@ public class FilterServlet implements Filter {
 			Method method = entry.getValue();
 			if (url.getUrlPath().equals(urlPath) && url.getMethod().toString().equalsIgnoreCase(httpMethod)) {
 				urlExists = true;
-				out.print("class :"+method.getDeclaringClass().getName() + " method:"+method.getName());
+				out.print("class :" + method.getDeclaringClass().getName() + " method:" + method.getName());
 
 				try {
-				 	Object result = invokeCorrespondingMethod(method,method.getDeclaringClass());
-					if(result instanceof String){
+					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass());
+					if (result instanceof String) {
 						out.print(result);
-					}else if(result instanceof ModelView){
+					} else if (result instanceof ModelView) {
 						ModelView modelView = (ModelView) result;
 						String jspFile = modelView.getView();
 						out.print(jspFile);
@@ -99,17 +123,48 @@ public class FilterServlet implements Filter {
 			out.println("<p>Routes disponibles :</p>");
 			out.println("<ul>");
 			for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
-				out.println("<li>" + entry.getKey().getMethod() + " " + entry.getKey().getUrlPath() + " -> " + entry.getValue().getName() + "</li>");
+				out.println("<li>" + entry.getKey().getMethod() + " " + entry.getKey().getUrlPath() + " -> "
+						+ entry.getValue().getName() + "</li>");
 			}
 			out.println("</ul>");
 			out.println("</body></html>");
 			return;
 		}
 
-		chain.doFilter(request, response);
+		// chain.doFilter(request, response);
 	}
 
-	private Object invokeCorrespondingMethod(Method method,Class<?> clazz) throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException, NoSuchMethodException, SecurityException{
+	private Map<String, String> getSettingFromProperties() {
+		Map<String, String> settingMap = new HashMap<>();
+
+		try {
+			Path path = Paths.get("src/main/resources");
+
+			List<Path> list = Files.walk(path)
+					.filter(p -> p.toString().endsWith(".properties"))
+					.collect(Collectors.toList());
+
+			for (Path file : list) {
+				try (InputStream in = Files.newInputStream(file)) {
+					Properties props = new Properties();
+					props.load(in);
+
+					for (String key : props.stringPropertyNames()) {
+						settingMap.put(key, props.getProperty(key));
+					}
+				}
+			}
+
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+
+		return settingMap;
+	}
+
+	private Object invokeCorrespondingMethod(Method method, Class<?> clazz)
+			throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException,
+			NoSuchMethodException, SecurityException {
 		Object instance = clazz.getDeclaredConstructor().newInstance();
 		Object result = method.invoke(instance);
 		return result;
