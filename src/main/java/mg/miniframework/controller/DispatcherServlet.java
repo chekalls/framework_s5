@@ -1,7 +1,6 @@
 package mg.miniframework.controller;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -29,7 +28,5 @@ public class DispatcherServlet extends HttpServlet {
     private void gererUrl(HttpServletRequest httpServletRequest,HttpServletResponse httpServletResponse) throws IOException{
         String chemin = httpServletRequest.getPathInfo();
         httpServletResponse.setContentType("text/plain;charset=UTF-8");
-        PrintWriter out = httpServletResponse.getWriter();
-        out.print("chemin : "+chemin);
     }
 }
