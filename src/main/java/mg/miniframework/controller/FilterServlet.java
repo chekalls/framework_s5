@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -111,7 +112,11 @@ public class FilterServlet implements Filter {
 
 	private Object invokeCorrespondingMethod(Method method,Class<?> clazz) throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException, NoSuchMethodException, SecurityException{
 		Object instance = clazz.getDeclaredConstructor().newInstance();
+		Parameter[] parameters = method.getParameters();
+		
+
 		Object result = method.invoke(instance);
+
 		return result;
 	}
 
