@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.FilterConfig;
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
@@ -36,6 +37,7 @@ import mg.miniframework.modules.Url;
 
 @WebFilter(filterName = "resourceExistenceFilter", urlPatterns = "/*")
 public class FilterServlet implements Filter {
+	private String baseFile;
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
@@ -46,19 +48,34 @@ public class FilterServlet implements Filter {
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
 			throws IOException, ServletException {
 
+		baseFile = new String();
 		HttpServletRequest req = (HttpServletRequest) request;
 		HttpServletResponse resp = (HttpServletResponse) response;
 		PrintWriter out = resp.getWriter();
 		ServletContext servletContext = req.getServletContext();
 
-		// File currentDir = new File(".");
+		String requestURI = req.getRequestURI();
+		String contextPath = req.getContextPath();
+		String relativePath = requestURI.substring(contextPath.length());
+		String realPath = req.getServletContext().getRealPath(relativePath);
 
-		// File[] files = currentDir.listFiles();
-		// if (files != null) {
-		// 	for (File f : files) {
-		// 		out.println(f.getName());
-		// 	}
-		// }
+		if (realPath != null) {
+			File resource = new File(realPath);
+			// 🔥 Si le fichier existe et se termine par .jsp ou autre ressource →
+			// laisser passer
+			if (resource.exists() && !resource.isDirectory() &&
+					(relativePath.endsWith(".jsp")
+							|| relativePath.endsWith(".css")
+							|| relativePath.endsWith(".js")
+							|| relativePath.endsWith(".png")
+							|| relativePath.endsWith(".jpg")
+							|| relativePath.endsWith(".jpeg")
+							|| relativePath.endsWith(".gif"))) {
+
+				chain.doFilter(request, response);
+				return; // important
+			}
+		}
 
 		if (servletContext.getAttribute("settingMap") == null) {
 			servletContext.setAttribute("settingMap", getSettingFromProperties());
@@ -66,7 +83,7 @@ public class FilterServlet implements Filter {
 
 		Map<String, String> mapSetting = (Map<String, String>) servletContext.getAttribute("settingMap");
 		if (mapSetting.containsKey("jsp_base_path")) {
-			out.print(mapSetting.get("jsp_base_path"));
+			baseFile = mapSetting.get("jsp_base_path");
 		}
 
 		if (servletContext.getAttribute("routeMap") == null) {
@@ -86,7 +103,6 @@ public class FilterServlet implements Filter {
 		RouteMap routeMap = (RouteMap) servletContext.getAttribute("routeMap");
 
 		String requestUri = req.getRequestURI();
-		String contextPath = req.getContextPath();
 		String urlPath = requestUri.substring(contextPath.length());
 		String httpMethod = req.getMethod();
 
@@ -96,7 +112,7 @@ public class FilterServlet implements Filter {
 			Method method = entry.getValue();
 			if (url.getUrlPath().equals(urlPath) && url.getMethod().toString().equalsIgnoreCase(httpMethod)) {
 				urlExists = true;
-				out.print("class :" + method.getDeclaringClass().getName() + " method:" + method.getName());
+				out.print("class :" + method.getDeclaringClass().getName() + " method:" + method.getName() + "\n");
 
 				try {
 					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass());
@@ -104,14 +120,55 @@ public class FilterServlet implements Filter {
 						out.print(result);
 					} else if (result instanceof ModelView) {
 						ModelView modelView = (ModelView) result;
-						String jspFile = modelView.getView();
-						out.print(jspFile);
+						String jspFile = modelView.getView(); 
+
+						if (!jspFile.startsWith("/")) {
+							jspFile = "/" + jspFile;
+						}
+
+						String forwardPath = baseFile + jspFile;
+						forwardPath = forwardPath.replaceAll("//+", "/");
+
+						realPath = req.getServletContext().getRealPath(forwardPath);
+						File jspRealFile = (realPath != null) ? new File(realPath) : null;
+
+						System.out.println("[FilterServlet] Forward vers : " + forwardPath);
+						System.out.println("[FilterServlet] Fichier réel : " + realPath);
+						System.out.println("[FilterServlet] Existe : " + (jspRealFile != null && jspRealFile.exists()));
+
+						if (jspRealFile != null && jspRealFile.exists()) {
+							RequestDispatcher dispatcher = req.getRequestDispatcher(forwardPath);
+							dispatcher.forward(req, resp);
+							return;
+						} else {
+							resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+							resp.setContentType("text/html;charset=UTF-8");
+							PrintWriter writer = resp.getWriter();
+							writer.println("<h2>Erreur : vue introuvable</h2>");
+							writer.println("<p>Chemin demandé : " + forwardPath + "</p>");
+							if (realPath != null)
+								writer.println("<p>Fichier réel : " + realPath + "</p>");
+							writer.flush();
+							return;
+						}
 					}
 				} catch (InstantiationException | IllegalAccessException | IllegalArgumentException
 						| InvocationTargetException | NoSuchMethodException | SecurityException e) {
 					e.printStackTrace();
+					out.print(e.getMessage());
 				}
 				break;
+			}
+		}
+
+		realPath = servletContext.getRealPath(urlPath);
+		out.println("real path : " + realPath);
+		if (realPath != null) {
+			File resource = new File(realPath);
+			out.println("resource exist :" + (resource.exists() && !resource.isDirectory()));
+			if (resource.exists() && !resource.isDirectory()) {
+				chain.doFilter(request, response);
+				return;
 			}
 		}
 
@@ -131,7 +188,7 @@ public class FilterServlet implements Filter {
 			return;
 		}
 
-		// chain.doFilter(request, response);
+		chain.doFilter(request, response);
 	}
 
 	private Map<String, String> getSettingFromProperties() {
