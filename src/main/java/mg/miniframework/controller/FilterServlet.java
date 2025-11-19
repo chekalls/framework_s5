@@ -20,6 +20,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.regex.Pattern;
+
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.FilterConfig;
@@ -113,60 +115,80 @@ public class FilterServlet implements Filter {
 		String httpMethod = req.getMethod();
 
 		boolean urlExists = false;
+
+		Map<Url, Pattern> routePaternMap = new HashMap<>();
+
 		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
 			Url url = entry.getKey();
-			Method method = entry.getValue();
-			if (url.getUrlPath().equals(urlPath) && url.getMethod().toString().equalsIgnoreCase(httpMethod)) {
-				urlExists = true;
-				out.print("class :" + method.getDeclaringClass().getName() + " method:" + method.getName() + "\n");
-
-				try {
-					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass());
-					if (result instanceof String) {
-						out.print(result);
-					} else if (result instanceof ModelView) {
-						ModelView modelView = (ModelView) result;
-						String jspFile = modelView.getView();
-
-						if (!jspFile.startsWith("/")) {
-							jspFile = "/" + jspFile;
-						}
-
-						String forwardPath = baseFile + jspFile;
-						forwardPath = forwardPath.replaceAll("//+", "/");
-
-						realPath = req.getServletContext().getRealPath(forwardPath);
-						File jspRealFile = (realPath != null) ? new File(realPath) : null;
-
-						System.out.println("[FilterServlet] Forward vers : " + forwardPath);
-						System.out.println("[FilterServlet] Fichier réel : " + realPath);
-						System.out.println("[FilterServlet] Existe : " + (jspRealFile != null && jspRealFile.exists()));
-
-						if (jspRealFile != null && jspRealFile.exists()) {
-							RequestDispatcher dispatcher = req.getRequestDispatcher(forwardPath);
-							dispatcher.forward(req, resp);
-							return;
-						} else {
-							resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
-							resp.setContentType("text/html;charset=UTF-8");
-							PrintWriter writer = resp.getWriter();
-							writer.println("<h2>Erreur : vue introuvable</h2>");
-							writer.println("<p> base Path :" + baseFile + " </p>");
-							writer.println("<p>Chemin demandé : " + forwardPath + "</p>");
-							if (realPath != null)
-								writer.println("<p>Fichier réel : " + realPath + "</p>");
-							writer.flush();
-							return;
-						}
-					}
-				} catch (InstantiationException | IllegalAccessException | IllegalArgumentException
-						| InvocationTargetException | NoSuchMethodException | SecurityException e) {
-					e.printStackTrace();
-					out.print(e.getMessage());
-				}
-				break;
-			}
+			routePaternMap.put(url, convertRouteToPattern(url.getUrlPath()));
+			// routePaternMap.put(url.getUrlPath(), convertRouteToPattern(url.getUrlPath()));
 		}
+
+		// if (!matchRoutes(urlPath, routePaternMap)) 
+		// 	out.print("aucun lien correspondant");
+		// 	return;
+		// }
+
+		Url url = new Url();
+		url.setMethod(Url.Method.GET);
+		url.setUrlPath(urlPath);
+
+		gererRoutes(url, routePaternMap, routeMap.getUrlMethodsMap(), req, resp, out);
+		// for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
+		// 	Url url = entry.getKey();
+		// 	Method method = entry.getValue();
+
+		// 	if (url.getUrlPath().equals(urlPath) && url.getMethod().toString().equalsIgnoreCase(httpMethod)) {
+		// 		urlExists = true;
+		// 		out.print("class :" + method.getDeclaringClass().getName() + " method:" + method.getName() + "\n");
+
+		// 		try {
+		// 			Object result = invokeCorrespondingMethod(method, method.getDeclaringClass());
+		// 			if (result instanceof String) {
+		// 				out.print(result);
+		// 			} else if (result instanceof ModelView) {
+		// 				ModelView modelView = (ModelView) result;
+		// 				String jspFile = modelView.getView();
+
+		// 				if (!jspFile.startsWith("/")) {
+		// 					jspFile = "/" + jspFile;
+		// 				}
+
+		// 				String forwardPath = baseFile + jspFile;
+		// 				forwardPath = forwardPath.replaceAll("//+", "/");
+
+		// 				realPath = req.getServletContext().getRealPath(forwardPath);
+		// 				File jspRealFile = (realPath != null) ? new File(realPath) : null;
+
+		// 				System.out.println("[FilterServlet] Forward vers : " + forwardPath);
+		// 				System.out.println("[FilterServlet] Fichier réel : " + realPath);
+		// 				System.out.println("[FilterServlet] Existe : " + (jspRealFile != null && jspRealFile.exists()));
+
+		// 				if (jspRealFile != null && jspRealFile.exists()) {
+		// 					RequestDispatcher dispatcher = req.getRequestDispatcher(forwardPath);
+		// 					dispatcher.forward(req, resp);
+		// 					return;
+		// 				} else {
+		// 					resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+		// 					resp.setContentType("text/html;charset=UTF-8");
+		// 					PrintWriter writer = resp.getWriter();
+		// 					writer.println("<h2>Erreur : vue introuvable</h2>");
+		// 					writer.println("<p> base Path :" + baseFile + " </p>");
+		// 					writer.println("<p>Chemin demandé : " + forwardPath + "</p>");
+		// 					if (realPath != null)
+		// 						writer.println("<p>Fichier réel : " + realPath + "</p>");
+		// 					writer.flush();
+		// 					return;
+		// 				}
+		// 			}
+		// 		} catch (InstantiationException | IllegalAccessException | IllegalArgumentException
+		// 				| InvocationTargetException | NoSuchMethodException | SecurityException e) {
+		// 			e.printStackTrace();
+		// 			out.print(e.getMessage());
+		// 		}
+		// 		break;
+		// 	}
+		// }
 
 		realPath = servletContext.getRealPath(urlPath);
 		out.println("real path : " + realPath);
@@ -232,7 +254,6 @@ public class FilterServlet implements Filter {
 			NoSuchMethodException, SecurityException {
 		Object instance = clazz.getDeclaredConstructor().newInstance();
 		Parameter[] parameters = method.getParameters();
-		
 
 		Object result = method.invoke(instance);
 
@@ -266,6 +287,74 @@ public class FilterServlet implements Filter {
 		});
 
 		return resultat;
+	}
+
+	private Pattern convertRouteToPattern(String route) {
+		String regex = route.replaceAll("\\{[^/]+\\}", "([^/]+)");
+		regex = "^" + regex + "$";
+		return Pattern.compile(regex);
+	}
+
+	private void gererRoutes(Url requestURL, Map<Url, Pattern> routes, Map<Url, Method> methodsMap,
+			HttpServletRequest req,HttpServletResponse resp,PrintWriter out) {
+		for (Map.Entry<Url, Pattern> patternEntry : routes.entrySet()) {
+			if (patternEntry.getValue().matcher(requestURL.getUrlPath()).matches()
+					&& requestURL.getMethod() == patternEntry.getKey().getMethod()) {
+				try {
+					Method method = methodsMap.get(patternEntry.getKey());
+					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass());
+					if (result instanceof String) {
+						out.print(result);
+					} else if (result instanceof ModelView) {
+						ModelView modelView = (ModelView) result;
+						String jspFile = modelView.getView();
+
+						if (!jspFile.startsWith("/")) {
+							jspFile = "/" + jspFile;
+						}
+
+						String forwardPath = baseFile + jspFile;
+						forwardPath = forwardPath.replaceAll("//+", "/");
+
+						String realPath = req.getServletContext().getRealPath(forwardPath);
+						File jspRealFile = (realPath != null) ? new File(realPath) : null;
+
+						System.out.println("[FilterServlet] Forward vers : " + forwardPath);
+						System.out.println("[FilterServlet] Fichier réel : " + realPath);
+						System.out.println("[FilterServlet] Existe : " + (jspRealFile != null && jspRealFile.exists()));
+
+						if (jspRealFile != null && jspRealFile.exists()) {
+							RequestDispatcher dispatcher = req.getRequestDispatcher(forwardPath);
+							dispatcher.forward(req, resp);
+							return;
+						} else {
+							resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+							resp.setContentType("text/html;charset=UTF-8");
+							PrintWriter writer = resp.getWriter();
+							writer.println("<h2>Erreur : vue introuvable</h2>");
+							writer.println("<p> base Path :" + baseFile + " </p>");
+							writer.println("<p>Chemin demandé : " + forwardPath + "</p>");
+							if (realPath != null)
+								writer.println("<p>Fichier réel : " + realPath + "</p>");
+							writer.flush();
+							return;
+						}
+					}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+				break;
+			}
+		}
+	}
+
+	private boolean matchRoutes(String requestURL, Map<String, Pattern> routes) {
+		for (Pattern p : routes.values()) {
+			if (p.matcher(requestURL).matches()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
