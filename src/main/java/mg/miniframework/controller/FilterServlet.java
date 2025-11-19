@@ -127,7 +127,7 @@ public class FilterServlet implements Filter {
 		url.setMethod(Url.Method.GET);
 		url.setUrlPath(urlPath);
 
-		gererRoutes(url, routePaternMap, routeMap.getUrlMethodsMap(), req, resp, out);
+		urlExists = gererRoutes(url, routePaternMap, routeMap.getUrlMethodsMap(), req, resp, out);
 		realPath = servletContext.getRealPath(urlPath);
 		out.println("real path : " + realPath);
 		if (realPath != null) {
@@ -187,13 +187,59 @@ public class FilterServlet implements Filter {
 		return map;
 	}
 
+	private Object convertParam(String value, Class<?> type) {
+
+		if (type == String.class)
+			return value;
+		if (type == int.class || type == Integer.class)
+			return Integer.parseInt(value);
+		if (type == long.class || type == Long.class)
+			return Long.parseLong(value);
+		if (type == double.class || type == Double.class)
+			return Double.parseDouble(value);
+		if (type == float.class || type == Float.class)
+			return Float.parseFloat(value);
+		if (type == boolean.class || type == Boolean.class)
+			return Boolean.parseBoolean(value);
+
+		// fallback : aucune conversion possible → valeur brute
+		return value;
+	}
+
+	private Object invokeCorrespondingMethod(Method method, Class<?> clazz, HttpServletRequest request)
+			throws InstantiationException, IllegalAccessException, IllegalArgumentException,
+			InvocationTargetException, NoSuchMethodException, SecurityException {
+
+		Object instance = clazz.getDeclaredConstructor().newInstance();
+		Parameter[] parameters = method.getParameters();
+		Object[] args = new Object[parameters.length];
+
+		for (int i = 0; i < parameters.length; i++) {
+			Parameter param = parameters[i];
+
+			// Récupérer la valeur brute depuis la requête via le nom du paramètre
+			String rawValue = request.getParameter(param.getName());
+
+			// Convertir dans le type attendu
+			args[i] = convertParam(rawValue, param.getType());
+		}
+
+		return method.invoke(instance, args);
+	}
+
 	private Object invokeCorrespondingMethod(Method method, Class<?> clazz)
 			throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException,
 			NoSuchMethodException, SecurityException {
 		Object instance = clazz.getDeclaredConstructor().newInstance();
 		Parameter[] parameters = method.getParameters();
+		Object[] args = new Object[parameters.length];
 
-		Object result = method.invoke(instance);
+		// for (int i = 0; i < parameters.length; i++) {
+		// 	String value = parameters[i].toString();
+		// 	args[i] = convertParam(rawValue, parameters[i].getType());
+		// }
+
+		Object result = method.invoke(instance, args);
 
 		return result;
 	}
@@ -233,16 +279,22 @@ public class FilterServlet implements Filter {
 		return Pattern.compile(regex);
 	}
 
-	private void gererRoutes(Url requestURL, Map<Url, Pattern> routes, Map<Url, Method> methodsMap,
-			HttpServletRequest req,HttpServletResponse resp,PrintWriter out) {
+	private boolean gererRoutes(Url requestURL, Map<Url, Pattern> routes, Map<Url, Method> methodsMap,
+			HttpServletRequest req, HttpServletResponse resp, PrintWriter out) {
 		for (Map.Entry<Url, Pattern> patternEntry : routes.entrySet()) {
 			if (patternEntry.getValue().matcher(requestURL.getUrlPath()).matches()
 					&& requestURL.getMethod() == patternEntry.getKey().getMethod()) {
 				try {
 					Method method = methodsMap.get(patternEntry.getKey());
+					Parameter[] methodParameters = method.getParameters();
+					for (Parameter parameter : methodParameters) {
+						out.print(parameter.getName());
+					}
+
 					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass());
 					if (result instanceof String) {
 						out.print(result);
+						return true;
 					} else if (result instanceof ModelView) {
 						ModelView modelView = (ModelView) result;
 						String jspFile = modelView.getView();
@@ -262,12 +314,12 @@ public class FilterServlet implements Filter {
 						System.out.println("[FilterServlet] Existe : " + (jspRealFile != null && jspRealFile.exists()));
 
 						if (jspRealFile != null && jspRealFile.exists()) {
-							for (Map.Entry<String,Object> dataEntry : modelView.getDataMap().entrySet()) {
+							for (Map.Entry<String, Object> dataEntry : modelView.getDataMap().entrySet()) {
 								req.setAttribute(dataEntry.getKey(), dataEntry.getValue());
 							}
 							RequestDispatcher dispatcher = req.getRequestDispatcher(forwardPath);
 							dispatcher.forward(req, resp);
-							return;
+							return true;
 						} else {
 							resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
 							resp.setContentType("text/html;charset=UTF-8");
@@ -278,7 +330,7 @@ public class FilterServlet implements Filter {
 							if (realPath != null)
 								writer.println("<p>Fichier réel : " + realPath + "</p>");
 							writer.flush();
-							return;
+							return false;
 						}
 					}
 				} catch (Exception e) {
@@ -287,15 +339,16 @@ public class FilterServlet implements Filter {
 				break;
 			}
 		}
+		return false;
 	}
 
 	// private boolean matchRoutes(String requestURL, Map<String, Pattern> routes) {
-	// 	for (Pattern p : routes.values()) {
-	// 		if (p.matcher(requestURL).matches()) {
-	// 			return true;
-	// 		}
-	// 	}
-	// 	return false;
+	// for (Pattern p : routes.values()) {
+	// if (p.matcher(requestURL).matches()) {
+	// return true;
+	// }
+	// }
+	// return false;
 	// }
 
 	@Override
