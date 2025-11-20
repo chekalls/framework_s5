@@ -36,10 +36,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
 import mg.miniframework.config.RouteMap;
 import mg.miniframework.modules.ModelView;
+import mg.miniframework.modules.RouteStatus;
 import mg.miniframework.modules.Url;
 
 @WebFilter(filterName = "resourceExistenceFilter", urlPatterns = "/*")
 public class FilterServlet implements Filter {
+
 	private String baseFile;
 
 	@Override
@@ -62,6 +64,7 @@ public class FilterServlet implements Filter {
 		String relativePath = requestURI.substring(contextPath.length());
 		String realPath = req.getServletContext().getRealPath(relativePath);
 
+		// --- fichiers statiques
 		if (realPath != null) {
 			File resource = new File(realPath);
 			if (resource.exists() && !resource.isDirectory() &&
@@ -78,22 +81,18 @@ public class FilterServlet implements Filter {
 			}
 		}
 
-		if (servletContext.getAttribute("settingMap") == null || servletContext.getAttribute("settingMap") == "") {
+		// --- chargement paramètres config
+		if (servletContext.getAttribute("settingMap") == null) {
 			Map<String, String> setContainer = getAllProperties();
 			servletContext.setAttribute("settingMap", setContainer);
-			out.print("null le izy teto");
 		}
 
 		Map<String, String> mapSetting = (Map<String, String>) servletContext.getAttribute("settingMap");
-		for (Map.Entry<String, String> iterable_element : mapSetting.entrySet()) {
-			out.println("setting :" + iterable_element.getKey() + " -> " + iterable_element.getValue());
-		}
 		if (mapSetting.containsKey("jsp_base_path")) {
 			baseFile = mapSetting.get("jsp_base_path");
-		} else {
-
 		}
 
+		// --- chargement routes
 		if (servletContext.getAttribute("routeMap") == null) {
 			try {
 				RouteMap routeMap = new RouteMap();
@@ -110,52 +109,54 @@ public class FilterServlet implements Filter {
 
 		RouteMap routeMap = (RouteMap) servletContext.getAttribute("routeMap");
 
-		String requestUri = req.getRequestURI();
-		String urlPath = requestUri.substring(contextPath.length());
-		String httpMethod = req.getMethod();
-
-		boolean urlExists = false;
-
-		Map<Url, Pattern> routePaternMap = new HashMap<>();
-
-		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
-			Url url = entry.getKey();
-			routePaternMap.put(url, convertRouteToPattern(url.getUrlPath()));
-		}
-
+		String urlPath = requestURI.substring(contextPath.length());
 		Url url = new Url();
-		url.setMethod(Url.Method.GET);
+		url.setMethod(Url.Method.valueOf(req.getMethod()));
 		url.setUrlPath(urlPath);
 
-		urlExists = gererRoutes(url, routePaternMap, routeMap.getUrlMethodsMap(), req, resp, out);
-		realPath = servletContext.getRealPath(urlPath);
-		out.println("real path : " + realPath);
-		if (realPath != null) {
-			File resource = new File(realPath);
-			out.println("resource exist :" + (resource.exists() && !resource.isDirectory()));
-			if (resource.exists() && !resource.isDirectory()) {
-				chain.doFilter(request, response);
-				return;
-			}
+		Map<Url, Pattern> routePattern = new HashMap<>();
+		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
+			routePattern.put(entry.getKey(), convertRouteToPattern(entry.getKey().getUrlPath()));
 		}
 
-		if (!urlExists) {
-			resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
-			out.println("<html><body>");
-			out.println("<h1>404 - Page Not Found</h1>");
-			out.println("<p>L'URL <b>" + urlPath + "</b> avec la méthode <b>" + httpMethod + "</b> n'existe pas.</p>");
-			out.println("<p>Routes disponibles :</p>");
-			out.println("<ul>");
-			for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
-				out.println("<li>" + entry.getKey().getMethod() + " " + entry.getKey().getUrlPath() + " -> "
-						+ entry.getValue().getName() + "</li>");
-			}
-			out.println("</ul>");
-			out.println("</body></html>");
+		Integer status = gererRoutes(url, routePattern, routeMap.getUrlMethodsMap(), req, resp);
+
+		if (status.equals(RouteStatus.NOT_FOUND.getCode())) {
+			// resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+			// out.println("<h1>404 - Route non trouvée</h1>");
+			print404(resp, urlPath,req.getMethod() , routeMap);
 			return;
 		}
 
-		chain.doFilter(request, response);
+		if (!status.equals(RouteStatus.NOT_FOUND.getCode())) {
+			return;
+		}
+
+		// si aucune route trouvée → laisser continuer
+		chain.doFilter(req, resp);
+	}
+
+	private void print404(HttpServletResponse resp, String urlPath, String httpMethod, RouteMap routeMap)
+			throws IOException {
+		resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+		resp.setContentType("text/html;charset=UTF-8");
+
+		PrintWriter out = resp.getWriter();
+		out.println("<html><body>");
+		out.println("<h1>404 - Page non trouvée</h1>");
+		out.println("<p>L'URL <b>" + urlPath + "</b> avec la méthode <b>" + httpMethod + "</b> n'existe pas.</p>");
+
+		out.println("<h3>Routes disponibles :</h3>");
+		out.println("<ul>");
+		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
+			out.println("<li><b>" + entry.getKey().getMethod() + "</b> : " +
+					entry.getKey().getUrlPath() + " → " +
+					entry.getValue().getDeclaringClass().getSimpleName() + "." +
+					entry.getValue().getName() + "()</li>");
+		}
+		out.println("</ul>");
+
+		out.println("</body></html>");
 	}
 
 	private Map<String, String> getAllProperties() {
@@ -216,32 +217,12 @@ public class FilterServlet implements Filter {
 
 		for (int i = 0; i < parameters.length; i++) {
 			Parameter param = parameters[i];
-
-			// Récupérer la valeur brute depuis la requête via le nom du paramètre
 			String rawValue = request.getParameter(param.getName());
 
-			// Convertir dans le type attendu
 			args[i] = convertParam(rawValue, param.getType());
 		}
 
 		return method.invoke(instance, args);
-	}
-
-	private Object invokeCorrespondingMethod(Method method, Class<?> clazz)
-			throws InstantiationException, IllegalAccessException, IllegalArgumentException, InvocationTargetException,
-			NoSuchMethodException, SecurityException {
-		Object instance = clazz.getDeclaredConstructor().newInstance();
-		Parameter[] parameters = method.getParameters();
-		Object[] args = new Object[parameters.length];
-
-		// for (int i = 0; i < parameters.length; i++) {
-		// 	String value = parameters[i].toString();
-		// 	args[i] = convertParam(rawValue, parameters[i].getType());
-		// }
-
-		Object result = method.invoke(instance, args);
-
-		return result;
 	}
 
 	private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass) throws Exception {
@@ -279,67 +260,59 @@ public class FilterServlet implements Filter {
 		return Pattern.compile(regex);
 	}
 
-	private boolean gererRoutes(Url requestURL, Map<Url, Pattern> routes, Map<Url, Method> methodsMap,
-			HttpServletRequest req, HttpServletResponse resp, PrintWriter out) {
+	private Integer gererRoutes(Url requestURL, Map<Url, Pattern> routes, Map<Url, Method> methodsMap,
+			HttpServletRequest req, HttpServletResponse resp) throws IOException {
+
+		PrintWriter out = resp.getWriter();
+
 		for (Map.Entry<Url, Pattern> patternEntry : routes.entrySet()) {
+
+			Url routeURL = patternEntry.getKey();
+
 			if (patternEntry.getValue().matcher(requestURL.getUrlPath()).matches()
-					&& requestURL.getMethod() == patternEntry.getKey().getMethod()) {
+					&& requestURL.getMethod() == routeURL.getMethod()) {
+
 				try {
-					Method method = methodsMap.get(patternEntry.getKey());
-					Parameter[] methodParameters = method.getParameters();
-					for (Parameter parameter : methodParameters) {
-						out.print(parameter.getName());
-					}
+					Method method = methodsMap.get(routeURL);
+					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass(), req);
 
-					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass());
+					// --- String → afficher directement
 					if (result instanceof String) {
-						out.print(result);
-						return true;
-					} else if (result instanceof ModelView) {
-						ModelView modelView = (ModelView) result;
-						String jspFile = modelView.getView();
-
-						if (!jspFile.startsWith("/")) {
-							jspFile = "/" + jspFile;
-						}
-
-						String forwardPath = baseFile + jspFile;
-						forwardPath = forwardPath.replaceAll("//+", "/");
-
-						String realPath = req.getServletContext().getRealPath(forwardPath);
-						File jspRealFile = (realPath != null) ? new File(realPath) : null;
-
-						System.out.println("[FilterServlet] Forward vers : " + forwardPath);
-						System.out.println("[FilterServlet] Fichier réel : " + realPath);
-						System.out.println("[FilterServlet] Existe : " + (jspRealFile != null && jspRealFile.exists()));
-
-						if (jspRealFile != null && jspRealFile.exists()) {
-							for (Map.Entry<String, Object> dataEntry : modelView.getDataMap().entrySet()) {
-								req.setAttribute(dataEntry.getKey(), dataEntry.getValue());
-							}
-							RequestDispatcher dispatcher = req.getRequestDispatcher(forwardPath);
-							dispatcher.forward(req, resp);
-							return true;
-						} else {
-							resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
-							resp.setContentType("text/html;charset=UTF-8");
-							PrintWriter writer = resp.getWriter();
-							writer.println("<h2>Erreur : vue introuvable</h2>");
-							writer.println("<p> base Path :" + baseFile + " </p>");
-							writer.println("<p>Chemin demandé : " + forwardPath + "</p>");
-							if (realPath != null)
-								writer.println("<p>Fichier réel : " + realPath + "</p>");
-							writer.flush();
-							return false;
-						}
+						resp.setContentType("text/html; charset=UTF-8");
+						out.print((String) result);
+						return RouteStatus.RETURN_STRING.getCode();
 					}
+
+					// --- ModelView → forward JSP
+					if (result instanceof ModelView) {
+						ModelView mv = (ModelView) result;
+
+						for (Map.Entry<String, Object> data : mv.getDataMap().entrySet()) {
+							req.setAttribute(data.getKey(), data.getValue());
+						}
+
+						String jspFile = mv.getView();
+						if (!jspFile.startsWith("/"))
+							jspFile = "/" + jspFile;
+						String forwardPath = baseFile + jspFile;
+
+						RequestDispatcher dispatcher = req.getRequestDispatcher(forwardPath);
+						dispatcher.forward(req, resp);
+						return RouteStatus.RETURN_MODEL_VIEW.getCode();
+					}
+
+					out.println("Return type inconnu : " + result.getClass().getName());
+					return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
+
 				} catch (Exception e) {
 					e.printStackTrace();
+					out.println("Erreur interne : " + e.getMessage());
+					return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
 				}
-				break;
 			}
 		}
-		return false;
+
+		return RouteStatus.NOT_FOUND.getCode();
 	}
 
 	// private boolean matchRoutes(String requestURL, Map<String, Pattern> routes) {
