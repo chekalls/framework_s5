@@ -42,6 +42,8 @@ import mg.miniframework.config.RouteMap;
 import mg.miniframework.modules.ModelView;
 import mg.miniframework.modules.RouteStatus;
 import mg.miniframework.modules.Url;
+import mg.miniframework.utils.DataTypeUtils;
+import mg.miniframework.utils.RoutePatternUtils;
 
 @WebFilter(filterName = "resourceExistenceFilter", urlPatterns = "/*")
 public class FilterServlet implements Filter {
@@ -116,7 +118,7 @@ public class FilterServlet implements Filter {
 
 		Map<Url, Pattern> routePattern = new HashMap<>();
 		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
-			routePattern.put(entry.getKey(), convertRouteToPattern(entry.getKey().getUrlPath()));
+			routePattern.put(entry.getKey(), RoutePatternUtils.convertRouteToPattern(entry.getKey().getUrlPath()));
 		}
 
 		Integer status = gererRoutes(url, routePattern, routeMap.getUrlMethodsMap(), req, resp);
@@ -185,22 +187,6 @@ public class FilterServlet implements Filter {
 		return map;
 	}
 
-	private Object convertParam(String value, Class<?> type) {
-
-		if (type == String.class)
-			return value;
-		if (type == int.class || type == Integer.class)
-			return Integer.parseInt(value);
-		if (type == long.class || type == Long.class)
-			return Long.parseLong(value);
-		if (type == double.class || type == Double.class)
-			return Double.parseDouble(value);
-		if (type == float.class || type == Float.class)
-			return Float.parseFloat(value);
-		if (type == boolean.class || type == Boolean.class)
-			return Boolean.parseBoolean(value);
-		return value;
-	}
 
 	private Object invokeCorrespondingMethod(Method method, Class<?> clazz, Map<String, String> params,
 			HttpServletRequest request,
@@ -231,37 +217,11 @@ public class FilterServlet implements Filter {
 			} else {
 				rawValue = (String) request.getParameter(param.getName());
 			}
-			// String rawValue = request.getParameter(param.getName());
 
-			// writer.println("attribut : " + param.getName() + " type :" + param.getType().getSimpleName().toString()
-			// 		+ " value : " + rawValue);
-			args[i] = convertParam(rawValue, param.getType());
+			args[i] = DataTypeUtils.convertParam(rawValue, param.getType());
 		}
 
 		return method.invoke(instance, args);
-	}
-
-	public static Map<String, String> extractPathParams(String pattern, String url) {
-		List<String> names = new ArrayList<>();
-		Matcher nameMatcher = Pattern.compile("\\{([^/]+)}").matcher(pattern);
-		while (nameMatcher.find()) {
-			names.add(nameMatcher.group(1));
-		}
-
-		String regex = pattern.replaceAll("\\{[^/]+}", "([^/]+)");
-
-		Pattern p = Pattern.compile(regex);
-		Matcher m = p.matcher(url);
-
-		Map<String, String> params = new LinkedHashMap<>();
-
-		if (m.matches()) {
-			for (int i = 0; i < names.size(); i++) {
-				params.put(names.get(i), m.group(i + 1));
-			}
-		}
-
-		return params;
 	}
 
 	private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass) throws Exception {
@@ -293,12 +253,6 @@ public class FilterServlet implements Filter {
 		return resultat;
 	}
 
-	private Pattern convertRouteToPattern(String route) {
-		String regex = route.replaceAll("\\{[^/]+\\}", "([^/]+)");
-		regex = "^" + regex + "$";
-		return Pattern.compile(regex);
-	}
-
 	private Integer gererRoutes(Url requestURL, Map<Url, Pattern> routes, Map<Url, Method> methodsMap,
 			HttpServletRequest req, HttpServletResponse resp) throws IOException {
 
@@ -315,7 +269,7 @@ public class FilterServlet implements Filter {
 					String originalPattern = routeURL.getUrlPath();
 
 					Method method = methodsMap.get(routeURL);
-					Map<String, String> params = extractPathParams(originalPattern, requestURL.getUrlPath());
+					Map<String, String> params = RoutePatternUtils.extractPathParams(originalPattern, requestURL.getUrlPath());
 					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass(), params, req, resp);
 
 					if (result instanceof String) {
