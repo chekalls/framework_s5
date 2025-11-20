@@ -56,7 +56,6 @@ public class FilterServlet implements Filter {
 		baseFile = new String();
 		HttpServletRequest req = (HttpServletRequest) request;
 		HttpServletResponse resp = (HttpServletResponse) response;
-		PrintWriter out = resp.getWriter();
 		ServletContext servletContext = req.getServletContext();
 
 		String requestURI = req.getRequestURI();
@@ -64,7 +63,6 @@ public class FilterServlet implements Filter {
 		String relativePath = requestURI.substring(contextPath.length());
 		String realPath = req.getServletContext().getRealPath(relativePath);
 
-		// --- fichiers statiques
 		if (realPath != null) {
 			File resource = new File(realPath);
 			if (resource.exists() && !resource.isDirectory() &&
@@ -81,7 +79,6 @@ public class FilterServlet implements Filter {
 			}
 		}
 
-		// --- chargement paramètres config
 		if (servletContext.getAttribute("settingMap") == null) {
 			Map<String, String> setContainer = getAllProperties();
 			servletContext.setAttribute("settingMap", setContainer);
@@ -92,7 +89,6 @@ public class FilterServlet implements Filter {
 			baseFile = mapSetting.get("jsp_base_path");
 		}
 
-		// --- chargement routes
 		if (servletContext.getAttribute("routeMap") == null) {
 			try {
 				RouteMap routeMap = new RouteMap();
@@ -122,9 +118,7 @@ public class FilterServlet implements Filter {
 		Integer status = gererRoutes(url, routePattern, routeMap.getUrlMethodsMap(), req, resp);
 
 		if (status.equals(RouteStatus.NOT_FOUND.getCode())) {
-			// resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
-			// out.println("<h1>404 - Route non trouvée</h1>");
-			print404(resp, urlPath,req.getMethod() , routeMap);
+			print404(resp, urlPath, req.getMethod(), routeMap);
 			return;
 		}
 
@@ -132,7 +126,6 @@ public class FilterServlet implements Filter {
 			return;
 		}
 
-		// si aucune route trouvée → laisser continuer
 		chain.doFilter(req, resp);
 	}
 
@@ -202,23 +195,23 @@ public class FilterServlet implements Filter {
 			return Float.parseFloat(value);
 		if (type == boolean.class || type == Boolean.class)
 			return Boolean.parseBoolean(value);
-
-		// fallback : aucune conversion possible → valeur brute
 		return value;
 	}
 
-	private Object invokeCorrespondingMethod(Method method, Class<?> clazz, HttpServletRequest request)
+	private Object invokeCorrespondingMethod(Method method, Class<?> clazz, HttpServletRequest request,
+			HttpServletResponse resp)
 			throws InstantiationException, IllegalAccessException, IllegalArgumentException,
-			InvocationTargetException, NoSuchMethodException, SecurityException {
+			InvocationTargetException, NoSuchMethodException, SecurityException, IOException {
 
 		Object instance = clazz.getDeclaredConstructor().newInstance();
 		Parameter[] parameters = method.getParameters();
 		Object[] args = new Object[parameters.length];
+		PrintWriter writer = resp.getWriter();
 
 		for (int i = 0; i < parameters.length; i++) {
 			Parameter param = parameters[i];
 			String rawValue = request.getParameter(param.getName());
-
+			writer.println("attribut : "+param.getName()+" type :"+param.getType().getSimpleName().toString()+" value : "+rawValue);
 			args[i] = convertParam(rawValue, param.getType());
 		}
 
@@ -274,16 +267,14 @@ public class FilterServlet implements Filter {
 
 				try {
 					Method method = methodsMap.get(routeURL);
-					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass(), req);
+					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass(), req,resp);
 
-					// --- String → afficher directement
 					if (result instanceof String) {
 						resp.setContentType("text/html; charset=UTF-8");
 						out.print((String) result);
 						return RouteStatus.RETURN_STRING.getCode();
 					}
 
-					// --- ModelView → forward JSP
 					if (result instanceof ModelView) {
 						ModelView mv = (ModelView) result;
 
