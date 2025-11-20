@@ -17,9 +17,11 @@ import java.nio.file.SimpleFileVisitor;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import jakarta.servlet.Filter;
@@ -35,6 +37,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
 import mg.miniframework.annotation.RequestAttribute;
+import mg.miniframework.annotation.UrlParam;
 import mg.miniframework.config.RouteMap;
 import mg.miniframework.modules.ModelView;
 import mg.miniframework.modules.RouteStatus;
@@ -199,7 +202,8 @@ public class FilterServlet implements Filter {
 		return value;
 	}
 
-	private Object invokeCorrespondingMethod(Method method, Class<?> clazz, HttpServletRequest request,
+	private Object invokeCorrespondingMethod(Method method, Class<?> clazz, Map<String, String> params,
+			HttpServletRequest request,
 			HttpServletResponse resp)
 			throws InstantiationException, IllegalAccessException, IllegalArgumentException,
 			InvocationTargetException, NoSuchMethodException, SecurityException, IOException {
@@ -212,22 +216,52 @@ public class FilterServlet implements Filter {
 		for (int i = 0; i < parameters.length; i++) {
 			Parameter param = parameters[i];
 			String rawValue = null;
+			UrlParam urlParamAnnotation = param.getAnnotation(UrlParam.class);
 			RequestAttribute requestAttributeAnnotation = param.getAnnotation(RequestAttribute.class);
-			if(requestAttributeAnnotation!=null){
+
+			if (urlParamAnnotation != null) {
+				rawValue = params.getOrDefault(urlParamAnnotation.name(),
+						params.getOrDefault(param.getName(), null));
+
+			} else if (requestAttributeAnnotation != null) {
 				rawValue = (String) request.getParameter(requestAttributeAnnotation.paramName());
-				if(rawValue==null ||rawValue==""){
+				if (rawValue == null || rawValue == "") {
 					rawValue = (String) requestAttributeAnnotation.defaultValue();
 				}
-			}else{
+			} else {
 				rawValue = (String) request.getParameter(param.getName());
 			}
 			// String rawValue = request.getParameter(param.getName());
 
-			writer.println("attribut : "+param.getName()+" type :"+param.getType().getSimpleName().toString()+" value : "+rawValue);
+			// writer.println("attribut : " + param.getName() + " type :" + param.getType().getSimpleName().toString()
+			// 		+ " value : " + rawValue);
 			args[i] = convertParam(rawValue, param.getType());
 		}
 
 		return method.invoke(instance, args);
+	}
+
+	public static Map<String, String> extractPathParams(String pattern, String url) {
+		List<String> names = new ArrayList<>();
+		Matcher nameMatcher = Pattern.compile("\\{([^/]+)}").matcher(pattern);
+		while (nameMatcher.find()) {
+			names.add(nameMatcher.group(1));
+		}
+
+		String regex = pattern.replaceAll("\\{[^/]+}", "([^/]+)");
+
+		Pattern p = Pattern.compile(regex);
+		Matcher m = p.matcher(url);
+
+		Map<String, String> params = new LinkedHashMap<>();
+
+		if (m.matches()) {
+			for (int i = 0; i < names.size(); i++) {
+				params.put(names.get(i), m.group(i + 1));
+			}
+		}
+
+		return params;
 	}
 
 	private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass) throws Exception {
@@ -278,8 +312,11 @@ public class FilterServlet implements Filter {
 					&& requestURL.getMethod() == routeURL.getMethod()) {
 
 				try {
+					String originalPattern = routeURL.getUrlPath();
+
 					Method method = methodsMap.get(routeURL);
-					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass(), req,resp);
+					Map<String, String> params = extractPathParams(originalPattern, requestURL.getUrlPath());
+					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass(), params, req, resp);
 
 					if (result instanceof String) {
 						resp.setContentType("text/html; charset=UTF-8");
@@ -317,15 +354,6 @@ public class FilterServlet implements Filter {
 
 		return RouteStatus.NOT_FOUND.getCode();
 	}
-
-	// private boolean matchRoutes(String requestURL, Map<String, Pattern> routes) {
-	// for (Pattern p : routes.values()) {
-	// if (p.matcher(requestURL).matches()) {
-	// return true;
-	// }
-	// }
-	// return false;
-	// }
 
 	@Override
 	public void destroy() {
