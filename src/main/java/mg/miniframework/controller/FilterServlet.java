@@ -34,6 +34,7 @@ import jakarta.servlet.annotation.WebFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
+import mg.miniframework.annotation.RequestAttribute;
 import mg.miniframework.config.RouteMap;
 import mg.miniframework.modules.ModelView;
 import mg.miniframework.modules.RouteStatus;
@@ -210,7 +211,18 @@ public class FilterServlet implements Filter {
 
 		for (int i = 0; i < parameters.length; i++) {
 			Parameter param = parameters[i];
-			String rawValue = request.getParameter(param.getName());
+			String rawValue = null;
+			RequestAttribute requestAttributeAnnotation = param.getAnnotation(RequestAttribute.class);
+			if(requestAttributeAnnotation!=null){
+				rawValue = (String) request.getParameter(requestAttributeAnnotation.paramName());
+				if(rawValue==null ||rawValue==""){
+					rawValue = (String) requestAttributeAnnotation.defaultValue();
+				}
+			}else{
+				rawValue = (String) request.getParameter(param.getName());
+			}
+			// String rawValue = request.getParameter(param.getName());
+
 			writer.println("attribut : "+param.getName()+" type :"+param.getType().getSimpleName().toString()+" value : "+rawValue);
 			args[i] = convertParam(rawValue, param.getType());
 		}
