@@ -12,9 +12,9 @@ import mg.miniframework.modules.Url;
 
 public class RouteMap {
     private Map<Class<?>, List<Method>> methodMaps;
-    private Map<Url,Method> urlMethodsMap;
+    private Map<Url, Method> urlMethodsMap;
 
-    public RouteMap(){
+    public RouteMap() {
         methodMaps = new HashMap<>();
         urlMethodsMap = new HashMap<>();
     }
@@ -22,33 +22,33 @@ public class RouteMap {
     public void addController(Class<?> controller) {
         Controller controllerAnnotation = controller.getAnnotation(Controller.class);
         String baseUrl = controllerAnnotation.mapping();
-        
+
         List<Method> annotatedMethods = new ArrayList<>();
         for (Method m : controller.getDeclaredMethods()) {
             if (m.isAnnotationPresent(mg.miniframework.annotation.UrlMap.class)) {
                 UrlMap urlMapAnnotation = m.getAnnotation(UrlMap.class);
                 annotatedMethods.add(m);
-                
-                    String fullUrl = normalizeUrl(baseUrl, urlMapAnnotation.value());
-                
+
+                String fullUrl = normalizeUrl(baseUrl, urlMapAnnotation.value());
+
                 urlMethodsMap.put(new Url(fullUrl, urlMapAnnotation.method()), m);
             }
         }
         methodMaps.put(controller, annotatedMethods);
     }
-    
+
     private String normalizeUrl(String baseUrl, String path) {
         if (baseUrl.endsWith("/")) {
             baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
         }
-        
+
         if (!path.startsWith("/")) {
             path = "/" + path;
         }
-        
+
         String fullUrl = baseUrl + path;
         fullUrl = fullUrl.replaceAll("/+", "/");
-        
+
         return fullUrl;
     }
 

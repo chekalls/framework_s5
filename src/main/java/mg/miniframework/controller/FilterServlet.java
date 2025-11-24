@@ -69,67 +69,73 @@ public class FilterServlet implements Filter {
 		String relativePath = requestURI.substring(contextPath.length());
 		String realPath = req.getServletContext().getRealPath(relativePath);
 
-		if (realPath != null) {
-			File resource = new File(realPath);
-			if (resource.exists() && !resource.isDirectory() &&
-					(relativePath.endsWith(".jsp")
-							|| relativePath.endsWith(".css")
-							|| relativePath.endsWith(".js")
-							|| relativePath.endsWith(".png")
-							|| relativePath.endsWith(".jpg")
-							|| relativePath.endsWith(".jpeg")
-							|| relativePath.endsWith(".gif"))) {
+		try {
+			if (realPath != null) {
+				File resource = new File(realPath);
+				if (resource.exists() && !resource.isDirectory() &&
+						(relativePath.endsWith(".jsp")
+								|| relativePath.endsWith(".css")
+								|| relativePath.endsWith(".js")
+								|| relativePath.endsWith(".png")
+								|| relativePath.endsWith(".jpg")
+								|| relativePath.endsWith(".jpeg")
+								|| relativePath.endsWith(".gif"))) {
 
-				chain.doFilter(request, response);
+					chain.doFilter(request, response);
+					return;
+				}
+			}
+
+			if (servletContext.getAttribute("settingMap") == null) {
+				Map<String, String> setContainer = getAllProperties();
+				servletContext.setAttribute("settingMap", setContainer);
+			}
+
+			Map<String, String> mapSetting = (Map<String, String>) servletContext.getAttribute("settingMap");
+			if (mapSetting.containsKey("jsp_base_path")) {
+				baseFile = mapSetting.get("jsp_base_path");
+			}
+
+			if (servletContext.getAttribute("routeMap") == null) {
+				try {
+					RouteMap routeMap = new RouteMap();
+					List<Class<?>> controllers = trouverClassesAvecAnnotation(Controller.class);
+
+					for (Class<?> class1 : controllers) {
+						routeMap.addController(class1);
+					}
+					servletContext.setAttribute("routeMap", routeMap);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+
+			RouteMap routeMap = (RouteMap) servletContext.getAttribute("routeMap");
+
+			String urlPath = requestURI.substring(contextPath.length());
+			Url url = new Url();
+			url.setMethod(Url.Method.valueOf(req.getMethod()));
+			url.setUrlPath(urlPath);
+
+			Map<Url, Pattern> routePattern = new HashMap<>();
+			for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
+				routePattern.put(entry.getKey(), RoutePatternUtils.convertRouteToPattern(entry.getKey().getUrlPath()));
+			}
+
+			Integer status = gererRoutes(url, routePattern, routeMap.getUrlMethodsMap(), req, resp);
+
+			if (status.equals(RouteStatus.NOT_FOUND.getCode())) {
+				print404(resp, urlPath, req.getMethod(), routeMap);
 				return;
 			}
-		}
 
-		if (servletContext.getAttribute("settingMap") == null) {
-			Map<String, String> setContainer = getAllProperties();
-			servletContext.setAttribute("settingMap", setContainer);
-		}
-
-		Map<String, String> mapSetting = (Map<String, String>) servletContext.getAttribute("settingMap");
-		if (mapSetting.containsKey("jsp_base_path")) {
-			baseFile = mapSetting.get("jsp_base_path");
-		}
-
-		if (servletContext.getAttribute("routeMap") == null) {
-			try {
-				RouteMap routeMap = new RouteMap();
-				List<Class<?>> controllers = trouverClassesAvecAnnotation(Controller.class);
-
-				for (Class<?> class1 : controllers) {
-					routeMap.addController(class1);
-				}
-				servletContext.setAttribute("routeMap", routeMap);
-			} catch (Exception e) {
-				e.printStackTrace();
+			if (!status.equals(RouteStatus.NOT_FOUND.getCode())) {
+				return;
 			}
-		}
 
-		RouteMap routeMap = (RouteMap) servletContext.getAttribute("routeMap");
-
-		String urlPath = requestURI.substring(contextPath.length());
-		Url url = new Url();
-		url.setMethod(Url.Method.valueOf(req.getMethod()));
-		url.setUrlPath(urlPath);
-
-		Map<Url, Pattern> routePattern = new HashMap<>();
-		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
-			routePattern.put(entry.getKey(), RoutePatternUtils.convertRouteToPattern(entry.getKey().getUrlPath()));
-		}
-
-		Integer status = gererRoutes(url, routePattern, routeMap.getUrlMethodsMap(), req, resp);
-
-		if (status.equals(RouteStatus.NOT_FOUND.getCode())) {
-			print404(resp, urlPath, req.getMethod(), routeMap);
-			return;
-		}
-
-		if (!status.equals(RouteStatus.NOT_FOUND.getCode())) {
-			return;
+		} catch (Exception e) {
+			PrintWriter out = resp.getWriter();
+			out.print(e.getMessage());
 		}
 
 		chain.doFilter(req, resp);
@@ -183,10 +189,8 @@ public class FilterServlet implements Filter {
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
-
 		return map;
 	}
-
 
 	private Object invokeCorrespondingMethod(Method method, Class<?> clazz, Map<String, String> params,
 			HttpServletRequest request,
@@ -269,7 +273,8 @@ public class FilterServlet implements Filter {
 					String originalPattern = routeURL.getUrlPath();
 
 					Method method = methodsMap.get(routeURL);
-					Map<String, String> params = RoutePatternUtils.extractPathParams(originalPattern, requestURL.getUrlPath());
+					Map<String, String> params = RoutePatternUtils.extractPathParams(originalPattern,
+							requestURL.getUrlPath());
 					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass(), params, req, resp);
 
 					if (result instanceof String) {
