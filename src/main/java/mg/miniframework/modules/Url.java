@@ -1,7 +1,5 @@
 package mg.miniframework.modules;
 
-// import java.nio.file.Path;
-
 public class Url {
     private String urlPath;
     private Method method;

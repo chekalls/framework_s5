@@ -5,9 +5,9 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.METHOD)
-public @interface UrlMap {
-    String value() default "/";
+@Target(ElementType.PARAMETER)
+public @interface FormParam {
+    String name();
+    boolean required() default false; 
 }
