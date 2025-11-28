@@ -1,5 +1,6 @@
 package mg.miniframework.config;
 
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -7,10 +8,13 @@ import java.util.List;
 import java.util.Map;
 
 import mg.miniframework.annotation.Controller;
+import mg.miniframework.annotation.GetMapping;
+import mg.miniframework.annotation.PostMapping;
 import mg.miniframework.annotation.UrlMap;
 import mg.miniframework.modules.Url;
 
 public class RouteMap {
+
     private Map<Class<?>, List<Method>> methodMaps;
     private Map<Url, Method> urlMethodsMap;
 
@@ -21,9 +25,17 @@ public class RouteMap {
 
     public void addController(Class<?> controller) {
         Controller controllerAnnotation = controller.getAnnotation(Controller.class);
+
+        if (controllerAnnotation == null) {
+            throw new IllegalArgumentException(
+                    "La classe " + controller.getName() + " n'est pas annotée avec @Controller.");
+        }
+
         String baseUrl = controllerAnnotation.mapping();
 
         List<Method> annotatedMethods = new ArrayList<>();
+
+
         for (Method m : controller.getDeclaredMethods()) {
             if (m.isAnnotationPresent(mg.miniframework.annotation.UrlMap.class)) {
                 UrlMap urlMapAnnotation = m.getAnnotation(UrlMap.class);
@@ -31,10 +43,28 @@ public class RouteMap {
 
                 String fullUrl = normalizeUrl(baseUrl, urlMapAnnotation.value());
 
-                urlMethodsMap.put(new Url(fullUrl, urlMapAnnotation.method()), m);
+                Url newUrl = new Url();
+                newUrl.setUrlPath(fullUrl);
+                if (isAMapping(m, newUrl)) {
+                    urlMethodsMap.put(newUrl, m);
+                }
             }
         }
         methodMaps.put(controller, annotatedMethods);
+    }
+
+    private boolean isAMapping(Method method, Url newUrl) {
+        Map<Class<? extends Annotation>, Url.Method> mappingList = Map.of(
+                PostMapping.class, Url.Method.POST,
+                GetMapping.class, Url.Method.GET);
+
+        for (var mapping : mappingList.entrySet()) {
+            if(method.getAnnotation(mapping.getKey())!=null){
+                newUrl.setMethod(mapping.getValue());
+                return true;
+            }
+        }
+        return false;
     }
 
     private String normalizeUrl(String baseUrl, String path) {

@@ -17,11 +17,9 @@ import java.nio.file.SimpleFileVisitor;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import jakarta.servlet.Filter;
@@ -53,7 +51,8 @@ public class FilterServlet implements Filter {
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
 	}
-
+	
+	
 	@SuppressWarnings("unchecked")
 	@Override
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
@@ -97,8 +96,8 @@ public class FilterServlet implements Filter {
 			}
 
 			if (servletContext.getAttribute("routeMap") == null) {
+				RouteMap routeMap = new RouteMap();
 				try {
-					RouteMap routeMap = new RouteMap();
 					List<Class<?>> controllers = trouverClassesAvecAnnotation(Controller.class);
 
 					for (Class<?> class1 : controllers) {
@@ -162,6 +161,7 @@ public class FilterServlet implements Filter {
 		out.println("</ul>");
 
 		out.println("</body></html>");
+		out.print("<p>totals :"+routeMap.getUrlMethodsMap().size());
 	}
 
 	private Map<String, String> getAllProperties() {
