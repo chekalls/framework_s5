@@ -51,14 +51,13 @@ public class FilterServlet implements Filter {
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
 	}
-	
-	
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
 			throws IOException, ServletException {
 
-		baseFile = new String();
+		baseFile = "";
 		HttpServletRequest req = (HttpServletRequest) request;
 		HttpServletResponse resp = (HttpServletResponse) response;
 		ServletContext servletContext = req.getServletContext();
@@ -128,9 +127,9 @@ public class FilterServlet implements Filter {
 				return;
 			}
 
-			if (!status.equals(RouteStatus.NOT_FOUND.getCode())) {
-				return;
-			}
+			// If a route was matched and handled, we return. If not found, we already
+			// printed 404 and returned.
+			return;
 
 		} catch (Exception e) {
 			PrintWriter out = resp.getWriter();
@@ -161,7 +160,7 @@ public class FilterServlet implements Filter {
 		out.println("</ul>");
 
 		out.println("</body></html>");
-		out.print("<p>totals :"+routeMap.getUrlMethodsMap().size());
+		out.print("<p>totals :" + routeMap.getUrlMethodsMap().size());
 	}
 
 	private Map<String, String> getAllProperties() {
@@ -172,6 +171,10 @@ public class FilterServlet implements Filter {
 
 			while (resources.hasMoreElements()) {
 				URL url = resources.nextElement();
+				// avoid trying to walk non-file URLs (e.g. inside jars)
+				if (!"file".equals(url.getProtocol())) {
+					continue;
+				}
 				Path root = Paths.get(url.toURI());
 
 				Files.walk(root)
@@ -203,23 +206,39 @@ public class FilterServlet implements Filter {
 		Object[] args = new Object[parameters.length];
 		PrintWriter writer = resp.getWriter();
 
+		Map<String, Object> mapParameters = new HashMap<>();
+		Enumeration<String> parameterNames = request.getParameterNames();
+
+		while (parameterNames.hasMoreElements()) {
+			String param = parameterNames.nextElement();
+			mapParameters.put(param, request.getParameter(param));
+		}
+
 		for (int i = 0; i < parameters.length; i++) {
 			Parameter param = parameters[i];
 			String rawValue = null;
+
 			UrlParam urlParamAnnotation = param.getAnnotation(UrlParam.class);
 			RequestAttribute requestAttributeAnnotation = param.getAnnotation(RequestAttribute.class);
-
 			if (urlParamAnnotation != null) {
 				rawValue = params.getOrDefault(urlParamAnnotation.name(),
 						params.getOrDefault(param.getName(), null));
 
 			} else if (requestAttributeAnnotation != null) {
-				rawValue = (String) request.getParameter(requestAttributeAnnotation.paramName());
-				if (rawValue == null || rawValue == "") {
-					rawValue = (String) requestAttributeAnnotation.defaultValue();
+				rawValue = request.getParameter(requestAttributeAnnotation.paramName());
+				if (rawValue == null || rawValue.isEmpty()) {
+					rawValue = requestAttributeAnnotation.defaultValue();
 				}
 			} else {
-				rawValue = (String) request.getParameter(param.getName());
+				if (param.getType().isAssignableFrom(Map.class)) {
+					args[i] = mapParameters;
+					continue;
+				}
+				
+				String parameter = request.getParameter(param.getName());
+				if (parameter != null) {
+					rawValue = parameter;
+				}
 			}
 
 			args[i] = DataTypeUtils.convertParam(rawValue, param.getType());
@@ -239,8 +258,11 @@ public class FilterServlet implements Filter {
 				if (file.toString().endsWith(".class")) {
 					String relativePath = basePath.relativize(file).toString();
 					String className = relativePath
-							.replace(File.separator, ".")
+							.replace(File.separatorChar, '.')
 							.replaceAll("\\.class$", "");
+					if (className.startsWith(".")) {
+						className = className.substring(1);
+					}
 					try {
 						Class<?> clazz = Class.forName(className);
 						if (clazz.isAnnotationPresent(
@@ -304,7 +326,6 @@ public class FilterServlet implements Filter {
 					return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
 
 				} catch (Exception e) {
-					e.printStackTrace();
 					out.println("Erreur interne : " + e.getMessage());
 					return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
 				}

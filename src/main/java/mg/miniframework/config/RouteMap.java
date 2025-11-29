@@ -23,7 +23,7 @@ public class RouteMap {
         urlMethodsMap = new HashMap<>();
     }
 
-    public void addController(Class<?> controller) {
+    public void addController(Class<?> controller) throws Exception {
         Controller controllerAnnotation = controller.getAnnotation(Controller.class);
 
         if (controllerAnnotation == null) {
@@ -53,7 +53,7 @@ public class RouteMap {
         methodMaps.put(controller, annotatedMethods);
     }
 
-    private boolean isAMapping(Method method, Url newUrl) {
+    private boolean isAMapping(Method method, Url newUrl) throws Exception{
         Map<Class<? extends Annotation>, Url.Method> mappingList = Map.of(
                 PostMapping.class, Url.Method.POST,
                 GetMapping.class, Url.Method.GET);
