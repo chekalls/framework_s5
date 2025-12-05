@@ -30,8 +30,11 @@ public class MethodManager {
     private Object getObjectInstanceFromRequest(Class<?> clazz, HttpServletRequest request)
             throws IOException, NoSuchMethodException, SecurityException, InstantiationException,
             IllegalAccessException, IllegalArgumentException, InvocationTargetException {
+
         Field[] classFields = clazz.getDeclaredFields();
-        logManager.insertLog("class name : " + clazz.getSimpleName(), LogStatus.DEBUG);
+        String className = clazz.getSimpleName().toLowerCase();
+
+        logManager.insertLog("class name : " + className, LogStatus.DEBUG);
         logManager.insertLog("==== found " + classFields.length + " fields", LogStatus.DEBUG);
 
         Constructor<?> constructor = clazz.getDeclaredConstructor();
@@ -42,12 +45,14 @@ public class MethodManager {
             Field field = classFields[n];
             field.setAccessible(true);
 
+            String attributeName = className + "." + field.getName();
+            attributeName = attributeName.strip();
             logManager.insertLog(
                     "---- object parameter found :[" + field.getName() + " ::'" + field.getType().getName()
-                            + "']",
+                            + "'] => " + attributeName,
                     LogStatus.DEBUG);
 
-            String fieldValue = request.getParameter(field.getName());
+            String fieldValue = request.getParameter(attributeName);
 
             if (fieldValue != null && !fieldValue.isEmpty()) {
                 Object converted = DataTypeUtils.convertParam(fieldValue, field.getType());
