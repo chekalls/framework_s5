@@ -1,4 +1,4 @@
-package mg.miniframework.config;
+package mg.miniframework.modules;
 
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
@@ -11,7 +11,6 @@ import mg.miniframework.annotation.Controller;
 import mg.miniframework.annotation.GetMapping;
 import mg.miniframework.annotation.PostMapping;
 import mg.miniframework.annotation.UrlMap;
-import mg.miniframework.modules.Url;
 
 public class RouteMap {
 
