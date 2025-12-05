@@ -1,14 +1,135 @@
 package mg.miniframework.utils;
 
+import java.lang.reflect.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
+import java.util.List;
+import java.util.Map;
 
 public class DataTypeUtils {
 
     private static String dateFormat = "yyyy-MM-dd";
+
+    @SuppressWarnings("unchecked")
+    public static Object convertListToTargetType(List<Object> valueList, Class<?> targetType, Class<?> elementType)
+            throws Exception {
+        if (targetType.isArray()) {
+            Object array = Array.newInstance(targetType.getComponentType(), valueList.size());
+            for (int i = 0; i < valueList.size(); i++) {
+                Object val = valueList.get(i);
+                Array.set(array, i, convertElement(val, targetType.getComponentType()));
+            }
+            return array;
+        }
+
+        if (Collection.class.isAssignableFrom(targetType)) {
+            Collection<Object> collection;
+            if (!targetType.isInterface()) {
+                try {
+                    collection = (Collection<Object>) targetType.getDeclaredConstructor().newInstance();
+                } catch (Exception e) {
+                    collection = new ArrayList<>();
+                }
+            } else {
+                collection = new ArrayList<>();
+            }
+
+            for (Object val : valueList) {
+                collection.add(convertElement(val, elementType != null ? elementType : Object.class));
+            }
+
+            return collection;
+        }
+
+        throw new IllegalArgumentException("Type cible non supporté : " + targetType.getName());
+    }
+
+    private static Object convertElement(Object value, Class<?> targetType) {
+        if (value == null)
+            return null;
+        if (targetType.isInstance(value))
+            return value;
+        if (targetType == String.class)
+            return value.toString();
+        if (targetType == Integer.class || targetType == int.class)
+            return Integer.parseInt(value.toString());
+        if (targetType == Long.class || targetType == long.class)
+            return Long.parseLong(value.toString());
+        if (targetType == Double.class || targetType == double.class)
+            return Double.parseDouble(value.toString());
+        if (targetType == Float.class || targetType == float.class)
+            return Float.parseFloat(value.toString());
+        if (targetType == Boolean.class || targetType == boolean.class)
+            return Boolean.parseBoolean(value.toString());
+        return value;
+    }
+
+    public static boolean isArrayType(Class<?> clazz) {
+        if (clazz.isArray())
+            return true;
+
+        if (Collection.class.isAssignableFrom(clazz))
+            return true;
+
+        if (Map.class.isAssignableFrom(clazz))
+            return true;
+
+        return false;
+    }
+
+    public static Class<?> getContentType(Class<?> clazz) {
+        if (clazz.isArray()) {
+            // Tableau natif
+            return clazz.getComponentType();
+        } else if (Collection.class.isAssignableFrom(clazz)) {
+            // Collection générique
+            // On ne peut pas récupérer le type exact à partir de Class<?>
+            // Ici, on retourne Object.class par défaut
+            return Object.class;
+        } else if (Map.class.isAssignableFrom(clazz)) {
+            // Map : retourner le type des valeurs
+            return Object.class;
+        } else {
+            // Type simple
+            return clazz;
+        }
+    }
+
+    /**
+     * Variante pour un Field, qui peut contenir le type générique si disponible
+     */
+    public static Class<?> getContentType(Field field) {
+        Class<?> clazz = field.getType();
+
+        if (clazz.isArray()) {
+            return clazz.getComponentType();
+        } else if (Collection.class.isAssignableFrom(clazz)) {
+            Type genericType = field.getGenericType();
+            if (genericType instanceof ParameterizedType) {
+                Type[] typeArgs = ((ParameterizedType) genericType).getActualTypeArguments();
+                if (typeArgs.length > 0 && typeArgs[0] instanceof Class) {
+                    return (Class<?>) typeArgs[0];
+                }
+            }
+            return Object.class; // par défaut si le generic n'est pas disponible
+        } else if (Map.class.isAssignableFrom(clazz)) {
+            Type genericType = field.getGenericType();
+            if (genericType instanceof ParameterizedType) {
+                Type[] typeArgs = ((ParameterizedType) genericType).getActualTypeArguments();
+                if (typeArgs.length > 1 && typeArgs[1] instanceof Class) {
+                    return (Class<?>) typeArgs[1]; // retourne type valeur
+                }
+            }
+            return Object.class;
+        } else {
+            return clazz;
+        }
+    }
 
     public static String getDateFormat() {
         return dateFormat;

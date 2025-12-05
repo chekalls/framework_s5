@@ -1,13 +1,14 @@
 package mg.miniframework.modules;
 
-import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.net.http.HttpRequest;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
@@ -27,9 +28,13 @@ public class MethodManager {
         logManager = new LogManager();
     }
 
+    @Deprecated
+    private Object handleArrayType() {
+        return null;
+    }
+
     private Object getObjectInstanceFromRequest(Class<?> clazz, HttpServletRequest request)
-            throws IOException, NoSuchMethodException, SecurityException, InstantiationException,
-            IllegalAccessException, IllegalArgumentException, InvocationTargetException {
+            throws Exception {
 
         Field[] classFields = clazz.getDeclaredFields();
         String className = clazz.getSimpleName().toLowerCase();
@@ -45,19 +50,44 @@ public class MethodManager {
             Field field = classFields[n];
             field.setAccessible(true);
 
-            String attributeName = className + "." + field.getName();
-            attributeName = attributeName.strip();
-            logManager.insertLog(
-                    "---- object parameter found :[" + field.getName() + " ::'" + field.getType().getName()
-                            + "'] => " + attributeName,
-                    LogStatus.DEBUG);
+            if (!DataTypeUtils.isArrayType(field.getType())) {
+                String attributeName = className + "." + field.getName();
+                attributeName = attributeName.strip();
+                logManager.insertLog(
+                        "---- object parameter found :[" + field.getName() + " ::'" + field.getType().getName()
+                                + "'] => " + attributeName,
+                        LogStatus.DEBUG);
 
-            String fieldValue = request.getParameter(attributeName);
+                String fieldValue = request.getParameter(attributeName);
 
-            if (fieldValue != null && !fieldValue.isEmpty()) {
-                Object converted = DataTypeUtils.convertParam(fieldValue, field.getType());
-                field.set(instance, converted);
+                if (fieldValue != null && !fieldValue.isEmpty()) {
+                    Object converted = DataTypeUtils.convertParam(fieldValue, field.getType());
+                    field.set(instance, converted);
+                }
+            } else {
+                ArrayList<Object> valueList = new ArrayList<>();
+                logManager.insertLog("array attributes found : "+field.getName()+" :: "+field.getType(), LogStatus.DEBUG);
+                for (Enumeration<String> paramEnumeration = request.getParameterNames(); paramEnumeration
+                        .hasMoreElements();) {
+                    String paramName = paramEnumeration.nextElement();
+
+                    String attributeBaseName = className + "." + field.getName() + "[";
+                    attributeBaseName = attributeBaseName.strip();
+                    if (paramName.startsWith(attributeBaseName)) {
+                        int indexStart = paramName.indexOf('[') + 1;
+                        int indexEnd = paramName.indexOf(']');
+                        int index = Integer.parseInt(paramName.substring(indexStart, indexEnd));
+                        String attributeName = className+"."+field.getName()+"["+index+"]";
+                        logManager.insertLog("===== param name : "+attributeName, LogStatus.DEBUG);
+                        String fieldValue = request.getParameter(attributeName);
+                        Object converted = DataTypeUtils.convertParam(fieldValue,DataTypeUtils.getContentType(field));
+                        valueList.add(index, converted);
+                        logManager.insertLog("===== values "+index+" : "+fieldValue+" :: "+DataTypeUtils.getContentType(field).getSimpleName() , LogStatus.DEBUG);
+                    }
+                }
+                field.set(instance, DataTypeUtils.convertListToTargetType(valueList, field.getType(), DataTypeUtils.getContentType(field)));
             }
+
         }
 
         return instance;
@@ -66,8 +96,7 @@ public class MethodManager {
     public Object invokeCorrespondingMethod(Method method, Class<?> clazz, Map<String, String> params,
             HttpServletRequest request,
             HttpServletResponse resp)
-            throws InstantiationException, IllegalAccessException, IllegalArgumentException,
-            InvocationTargetException, NoSuchMethodException, SecurityException, IOException {
+            throws Exception {
 
         Object instance = clazz.getDeclaredConstructor().newInstance();
         Parameter[] parameters = method.getParameters();
