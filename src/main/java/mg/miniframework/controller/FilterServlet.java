@@ -2,12 +2,8 @@ package mg.miniframework.controller;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintWriter;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.URL;
-import java.lang.reflect.Parameter;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,11 +11,9 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Paths;
 import java.nio.file.SimpleFileVisitor;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.regex.Pattern;
 
 import jakarta.servlet.Filter;
@@ -34,31 +28,37 @@ import jakarta.servlet.annotation.WebFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
-import mg.miniframework.annotation.RequestAttribute;
-import mg.miniframework.annotation.UrlParam;
-import mg.miniframework.config.RouteMap;
+import mg.miniframework.modules.ConfigLoader;
+import mg.miniframework.modules.LogManager;
+import mg.miniframework.modules.MethodManager;
 import mg.miniframework.modules.ModelView;
+import mg.miniframework.modules.RouteMap;
 import mg.miniframework.modules.RouteStatus;
 import mg.miniframework.modules.Url;
-import mg.miniframework.utils.DataTypeUtils;
+import mg.miniframework.modules.LogManager.LogStatus;
 import mg.miniframework.utils.RoutePatternUtils;
 
 @WebFilter(filterName = "resourceExistenceFilter", urlPatterns = "/*")
 public class FilterServlet implements Filter {
 
 	private String baseFile;
+	private MethodManager methodeManager;
+	private LogManager logManager;
+	private ConfigLoader configLoader;
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
+		methodeManager = new MethodManager();
+		this.logManager = new LogManager();
+		this.configLoader = new ConfigLoader();
 	}
-	
-	
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain)
 			throws IOException, ServletException {
 
-		baseFile = new String();
+		baseFile = "";
 		HttpServletRequest req = (HttpServletRequest) request;
 		HttpServletResponse resp = (HttpServletResponse) response;
 		ServletContext servletContext = req.getServletContext();
@@ -86,7 +86,10 @@ public class FilterServlet implements Filter {
 			}
 
 			if (servletContext.getAttribute("settingMap") == null) {
-				Map<String, String> setContainer = getAllProperties();
+				Map<String, String> setContainer = configLoader.getAllProperties(servletContext);
+				for (Map.Entry<String,String> element : setContainer.entrySet()) {
+					logManager.insertLog("config found ["+element.getKey()+":"+element.getValue()+"]", LogStatus.INFO);	
+				}
 				servletContext.setAttribute("settingMap", setContainer);
 			}
 
@@ -128,9 +131,7 @@ public class FilterServlet implements Filter {
 				return;
 			}
 
-			if (!status.equals(RouteStatus.NOT_FOUND.getCode())) {
-				return;
-			}
+			return;
 
 		} catch (Exception e) {
 			PrintWriter out = resp.getWriter();
@@ -161,76 +162,13 @@ public class FilterServlet implements Filter {
 		out.println("</ul>");
 
 		out.println("</body></html>");
-		out.print("<p>totals :"+routeMap.getUrlMethodsMap().size());
-	}
-
-	private Map<String, String> getAllProperties() {
-		Map<String, String> map = new HashMap<>();
-
-		try {
-			Enumeration<URL> resources = getClass().getClassLoader().getResources("");
-
-			while (resources.hasMoreElements()) {
-				URL url = resources.nextElement();
-				Path root = Paths.get(url.toURI());
-
-				Files.walk(root)
-						.filter(p -> p.toString().endsWith(".properties"))
-						.forEach(p -> {
-							try (InputStream in = Files.newInputStream(p)) {
-								Properties props = new Properties();
-								props.load(in);
-								props.forEach((k, v) -> map.put(k.toString(), v.toString()));
-							} catch (IOException ignored) {
-							}
-						});
-			}
-
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		return map;
-	}
-
-	private Object invokeCorrespondingMethod(Method method, Class<?> clazz, Map<String, String> params,
-			HttpServletRequest request,
-			HttpServletResponse resp)
-			throws InstantiationException, IllegalAccessException, IllegalArgumentException,
-			InvocationTargetException, NoSuchMethodException, SecurityException, IOException {
-
-		Object instance = clazz.getDeclaredConstructor().newInstance();
-		Parameter[] parameters = method.getParameters();
-		Object[] args = new Object[parameters.length];
-		PrintWriter writer = resp.getWriter();
-
-		for (int i = 0; i < parameters.length; i++) {
-			Parameter param = parameters[i];
-			String rawValue = null;
-			UrlParam urlParamAnnotation = param.getAnnotation(UrlParam.class);
-			RequestAttribute requestAttributeAnnotation = param.getAnnotation(RequestAttribute.class);
-
-			if (urlParamAnnotation != null) {
-				rawValue = params.getOrDefault(urlParamAnnotation.name(),
-						params.getOrDefault(param.getName(), null));
-
-			} else if (requestAttributeAnnotation != null) {
-				rawValue = (String) request.getParameter(requestAttributeAnnotation.paramName());
-				if (rawValue == null || rawValue == "") {
-					rawValue = (String) requestAttributeAnnotation.defaultValue();
-				}
-			} else {
-				rawValue = (String) request.getParameter(param.getName());
-			}
-
-			args[i] = DataTypeUtils.convertParam(rawValue, param.getType());
-		}
-
-		return method.invoke(instance, args);
+		out.print("<p>totals :" + routeMap.getUrlMethodsMap().size());
 	}
 
 	private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass) throws Exception {
 		List<Class<?>> resultat = new ArrayList<>();
 		String classesPath = getClass().getClassLoader().getResource("").getPath();
+		logManager.insertLog("classes base path found :"+classesPath, LogStatus.INFO);
 		Path basePath = Paths.get(classesPath);
 
 		Files.walkFileTree(basePath, new SimpleFileVisitor<Path>() {
@@ -239,13 +177,17 @@ public class FilterServlet implements Filter {
 				if (file.toString().endsWith(".class")) {
 					String relativePath = basePath.relativize(file).toString();
 					String className = relativePath
-							.replace(File.separator, ".")
+							.replace(File.separatorChar, '.')
 							.replaceAll("\\.class$", "");
+					if (className.startsWith(".")) {
+						className = className.substring(1);
+					}
 					try {
 						Class<?> clazz = Class.forName(className);
 						if (clazz.isAnnotationPresent(
 								annotationClass.asSubclass(java.lang.annotation.Annotation.class))) {
 							resultat.add(clazz);
+							logManager.insertLog("controller class found "+className, LogStatus.INFO);
 						}
 					} catch (Throwable t) {
 					}
@@ -275,7 +217,8 @@ public class FilterServlet implements Filter {
 					Method method = methodsMap.get(routeURL);
 					Map<String, String> params = RoutePatternUtils.extractPathParams(originalPattern,
 							requestURL.getUrlPath());
-					Object result = invokeCorrespondingMethod(method, method.getDeclaringClass(), params, req, resp);
+					Object result = methodeManager.invokeCorrespondingMethod(method, method.getDeclaringClass(), params,
+							req, resp);
 
 					if (result instanceof String) {
 						resp.setContentType("text/html; charset=UTF-8");
@@ -304,7 +247,6 @@ public class FilterServlet implements Filter {
 					return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
 
 				} catch (Exception e) {
-					e.printStackTrace();
 					out.println("Erreur interne : " + e.getMessage());
 					return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
 				}
