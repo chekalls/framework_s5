@@ -28,7 +28,9 @@ import jakarta.servlet.annotation.WebFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
+import mg.miniframework.annotation.JsonUrl;
 import mg.miniframework.modules.ConfigLoader;
+import mg.miniframework.modules.ContentRenderManager;
 import mg.miniframework.modules.LogManager;
 import mg.miniframework.modules.MethodManager;
 import mg.miniframework.modules.ModelView;
@@ -45,12 +47,14 @@ public class FilterServlet implements Filter {
 	private MethodManager methodeManager;
 	private LogManager logManager;
 	private ConfigLoader configLoader;
+	private ContentRenderManager contentRenderManager;
 
 	@Override
 	public void init(FilterConfig filterConfig) throws ServletException {
 		methodeManager = new MethodManager();
 		this.logManager = new LogManager();
 		this.configLoader = new ConfigLoader();
+		this.contentRenderManager = new ContentRenderManager();
 	}
 
 	@SuppressWarnings("unchecked")
@@ -87,8 +91,9 @@ public class FilterServlet implements Filter {
 
 			if (servletContext.getAttribute("settingMap") == null) {
 				Map<String, String> setContainer = configLoader.getAllProperties(servletContext);
-				for (Map.Entry<String,String> element : setContainer.entrySet()) {
-					logManager.insertLog("config found ["+element.getKey()+":"+element.getValue()+"]", LogStatus.INFO);	
+				for (Map.Entry<String, String> element : setContainer.entrySet()) {
+					logManager.insertLog("config found [" + element.getKey() + ":" + element.getValue() + "]",
+							LogStatus.INFO);
 				}
 				servletContext.setAttribute("settingMap", setContainer);
 			}
@@ -168,7 +173,7 @@ public class FilterServlet implements Filter {
 	private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass) throws Exception {
 		List<Class<?>> resultat = new ArrayList<>();
 		String classesPath = getClass().getClassLoader().getResource("").getPath();
-		logManager.insertLog("classes base path found :"+classesPath, LogStatus.INFO);
+		logManager.insertLog("classes base path found :" + classesPath, LogStatus.INFO);
 		Path basePath = Paths.get(classesPath);
 
 		Files.walkFileTree(basePath, new SimpleFileVisitor<Path>() {
@@ -187,7 +192,7 @@ public class FilterServlet implements Filter {
 						if (clazz.isAnnotationPresent(
 								annotationClass.asSubclass(java.lang.annotation.Annotation.class))) {
 							resultat.add(clazz);
-							logManager.insertLog("controller class found "+className, LogStatus.INFO);
+							logManager.insertLog("controller class found " + className, LogStatus.INFO);
 						}
 					} catch (Throwable t) {
 					}
@@ -220,31 +225,18 @@ public class FilterServlet implements Filter {
 					Object result = methodeManager.invokeCorrespondingMethod(method, method.getDeclaringClass(), params,
 							req, resp);
 
-					if (result instanceof String) {
-						resp.setContentType("text/html; charset=UTF-8");
-						out.print((String) result);
-						return RouteStatus.RETURN_STRING.getCode();
+					if (method.isAnnotationPresent(JsonUrl.class)) {
+						String jsonContent = contentRenderManager.convertToJson(result);
+
+						resp.setContentType("application/json; charset=UTF-8");
+						resp.setCharacterEncoding("UTF-8");
+
+						out.print(jsonContent);
+						out.flush(); // optionnel mais propre
+						return RouteStatus.RETURN_JSON.getCode();
 					}
 
-					if (result instanceof ModelView) {
-						ModelView mv = (ModelView) result;
-
-						for (Map.Entry<String, Object> data : mv.getDataMap().entrySet()) {
-							req.setAttribute(data.getKey(), data.getValue());
-						}
-
-						String jspFile = mv.getView();
-						if (!jspFile.startsWith("/"))
-							jspFile = "/" + jspFile;
-						String forwardPath = baseFile + jspFile;
-
-						RequestDispatcher dispatcher = req.getRequestDispatcher(forwardPath);
-						dispatcher.forward(req, resp);
-						return RouteStatus.RETURN_MODEL_VIEW.getCode();
-					}
-
-					out.println("Return type inconnu : " + result.getClass().getName());
-					return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
+					return contentRenderManager.renderContent(result, req, resp);
 
 				} catch (Exception e) {
 					out.println("Erreur interne : " + e.getMessage());
