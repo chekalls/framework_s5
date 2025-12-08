@@ -36,6 +36,13 @@ public class MethodManager {
     private Object getObjectInstanceFromRequest(Class<?> clazz, HttpServletRequest request)
             throws Exception {
 
+        if(DataTypeUtils.isArrayType(clazz)){
+            logManager.insertLog("array type parameter found : "+clazz.getSimpleName(),LogStatus.DEBUG);
+            logManager.insertLog("unsupported function parameter : "+clazz.getName(), LogStatus.ERROR);
+            // ArrayList<Object> valuesList = new ArrayList<>();
+            return null;
+        }
+
         Field[] classFields = clazz.getDeclaredFields();
         String className = clazz.getSimpleName().toLowerCase();
 
@@ -45,6 +52,8 @@ public class MethodManager {
         Constructor<?> constructor = clazz.getDeclaredConstructor();
         constructor.setAccessible(true);
         Object instance = constructor.newInstance();
+
+        
 
         for (int n = 0; n < classFields.length; n++) {
             Field field = classFields[n];
