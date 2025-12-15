@@ -101,6 +101,8 @@ public class FilterServlet implements Filter {
 			Map<String, String> mapSetting = (Map<String, String>) servletContext.getAttribute("settingMap");
 			if (mapSetting.containsKey("jsp_base_path")) {
 				baseFile = mapSetting.get("jsp_base_path");
+				this.contentRenderManager.setBaseJspPath(baseFile);
+
 			}
 
 			if (servletContext.getAttribute("routeMap") == null) {
@@ -132,7 +134,7 @@ public class FilterServlet implements Filter {
 			Integer status = gererRoutes(url, routePattern, routeMap.getUrlMethodsMap(), req, resp);
 
 			if (status.equals(RouteStatus.NOT_FOUND.getCode())) {
-				print404(resp, urlPath, req.getMethod(), routeMap);
+				print404(req, resp, urlPath, req.getMethod(), routeMap);
 				return;
 			}
 
@@ -146,28 +148,44 @@ public class FilterServlet implements Filter {
 		chain.doFilter(req, resp);
 	}
 
-	private void print404(HttpServletResponse resp, String urlPath, String httpMethod, RouteMap routeMap)
+	private void print404(HttpServletRequest req, HttpServletResponse resp, String urlPath, String httpMethod,
+			RouteMap routeMap)
 			throws IOException {
+
 		resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
 		resp.setContentType("text/html;charset=UTF-8");
 
 		PrintWriter out = resp.getWriter();
+
 		out.println("<html><body>");
 		out.println("<h1>404 - Page non trouvée</h1>");
 		out.println("<p>L'URL <b>" + urlPath + "</b> avec la méthode <b>" + httpMethod + "</b> n'existe pas.</p>");
 
 		out.println("<h3>Routes disponibles :</h3>");
 		out.println("<ul>");
+
 		for (Map.Entry<Url, Method> entry : routeMap.getUrlMethodsMap().entrySet()) {
-			out.println("<li><b>" + entry.getKey().getMethod() + "</b> : " +
-					entry.getKey().getUrlPath() + " → " +
-					entry.getValue().getDeclaringClass().getSimpleName() + "." +
-					entry.getValue().getName() + "()</li>");
+
+			String methodHttp = entry.getKey().getMethod().toString();
+			String path = entry.getKey().getUrlPath();
+			Method methodObj = entry.getValue();
+
+			// Crée un lien cliquable vers la route
+			String link = "<a href=\"" + req.getContextPath() + path + "\">" + path + "</a>";
+
+			out.println("<li>"
+					+ "<b>" + methodHttp + "</b> : "
+					+ link
+					+ " → "
+					+ methodObj.getDeclaringClass().getSimpleName() + "."
+					+ methodObj.getName() + "()"
+					+ "</li>");
 		}
+
 		out.println("</ul>");
 
+		out.println("<p>Total : " + routeMap.getUrlMethodsMap().size() + "</p>");
 		out.println("</body></html>");
-		out.print("<p>totals :" + routeMap.getUrlMethodsMap().size());
 	}
 
 	private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass) throws Exception {
@@ -210,7 +228,6 @@ public class FilterServlet implements Filter {
 		PrintWriter out = resp.getWriter();
 
 		for (Map.Entry<Url, Pattern> patternEntry : routes.entrySet()) {
-
 			Url routeURL = patternEntry.getKey();
 
 			if (patternEntry.getValue().matcher(requestURL.getUrlPath()).matches()
@@ -232,11 +249,12 @@ public class FilterServlet implements Filter {
 						resp.setCharacterEncoding("UTF-8");
 
 						out.print(jsonContent);
-						out.flush(); // optionnel mais propre
+						out.flush();
 						return RouteStatus.RETURN_JSON.getCode();
 					}
 
 					return contentRenderManager.renderContent(result, req, resp);
+					// return RouteStatus.NOT_FOUND.getCode();
 
 				} catch (Exception e) {
 					out.println("Erreur interne : " + e.getMessage());

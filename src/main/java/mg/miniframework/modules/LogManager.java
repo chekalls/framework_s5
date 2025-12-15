@@ -8,7 +8,10 @@ import java.util.Date;
 
 public class LogManager {
 
-    private static String logBasePath = "/home/itu/Documents/s5/framework/projet/framework_s5/log";
+    // Use a relative path so logs are stored in the project's ./log folder by default.
+    // This makes the path portable across environments. You can override by setting
+    // the system property 'miniframework.logdir' if needed.
+    private static String logBasePath = System.getProperty("miniframework.logdir", "log");
 
     public LogManager() {
         File folder = new File(logBasePath);
