@@ -15,6 +15,28 @@ public class DataTypeUtils {
 
     private static String dateFormat = "yyyy-MM-dd";
 
+    public static boolean isPrimitiveOrWrapper(Class<?> clazz) {
+        if (clazz.isPrimitive()) {
+            return true;
+        }
+
+        if (clazz == Boolean.class || clazz == Byte.class || clazz == Character.class
+                || clazz == Short.class || clazz == Integer.class || clazz == Long.class
+                || clazz == Float.class || clazz == Double.class || clazz == Void.class) {
+            return true;
+        }
+
+        if (clazz == String.class) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public static boolean isListType(Class<?> clazz) {
+        return List.class.isAssignableFrom(clazz);
+    }
+
     @SuppressWarnings("unchecked")
     public static Object convertListToTargetType(List<Object> valueList, Class<?> targetType, Class<?> elementType)
             throws Exception {
