@@ -197,12 +197,10 @@ public class MethodManager {
 
                 Type paramType = param.getParameterizedType();
                 if (Map.class.isAssignableFrom(param.getType())) {
-                    // Vérifie si la Map correspond à <String,Object>
                     if (DataTypeUtils.isMapOfType(mapParameters, String.class, Object.class, paramType)) {
                         args[i] = mapParameters;
                         continue;
                     } else if (Map.class.isAssignableFrom(param.getType())) {
-                        // Vérifie si la Map est <Path, byte[]>
                         if (DataTypeUtils.isMapOfType(mapParameters, Path.class, byte[].class, paramType)) {
                             args[i] = mapParameters;
                             continue;
