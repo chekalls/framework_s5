@@ -5,6 +5,8 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.Type;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.HashMap;
@@ -45,8 +47,10 @@ public class MethodManager {
         logManager.insertLog("class name : " + className, LogStatus.DEBUG);
         logManager.insertLog("==== found " + classFields.length + " fields", LogStatus.DEBUG);
 
-        // Determine the base prefix for attributes. If a prefix is provided, use it as-is
-        // (it should represent the path up to the current object, e.g. "person.address").
+        // Determine the base prefix for attributes. If a prefix is provided, use it
+        // as-is
+        // (it should represent the path up to the current object, e.g.
+        // "person.address").
         // Otherwise the base prefix is the class name (top-level parameter name).
         String basePrefix = (prefix == null || prefix.isEmpty()) ? className : prefix;
 
@@ -59,7 +63,8 @@ public class MethodManager {
             field.setAccessible(true);
 
             if (!DataTypeUtils.isArrayType(field.getType())) {
-                // attribute name is like "<basePrefix>.<fieldName>" -> e.g. "person.name" or "person.address.street"
+                // attribute name is like "<basePrefix>.<fieldName>" -> e.g. "person.name" or
+                // "person.address.street"
                 String attributeName = (basePrefix + "." + field.getName()).strip();
                 logManager.insertLog(
                         "---- object parameter found :[" + field.getName() + " ::'" + field.getType().getName()
@@ -71,9 +76,12 @@ public class MethodManager {
                 if (fieldValue != null && !fieldValue.isEmpty()) {
                     Object converted = DataTypeUtils.convertParam(fieldValue, field.getType());
                     field.set(instance, converted);
-                } else if (!DataTypeUtils.isPrimitiveOrWrapper(field.getType()) && !field.getType().equals(String.class)) {
-                    // Attempt to populate nested object even when there's no direct parameter for the object itself.
-                    // For nested objects, recurse with prefix equal to the attributeName (so nested fields use it as base).
+                } else if (!DataTypeUtils.isPrimitiveOrWrapper(field.getType())
+                        && !field.getType().equals(String.class)) {
+                    // Attempt to populate nested object even when there's no direct parameter for
+                    // the object itself.
+                    // For nested objects, recurse with prefix equal to the attributeName (so nested
+                    // fields use it as base).
                     Object subObject = getObjectInstanceFromRequest(field.getType(), request, attributeName);
                     field.set(instance, subObject);
                 }
@@ -187,6 +195,21 @@ public class MethodManager {
 
                 String parameter = request.getParameter(param.getName());
 
+                Type paramType = param.getParameterizedType();
+                if (Map.class.isAssignableFrom(param.getType())) {
+                    // Vérifie si la Map correspond à <String,Object>
+                    if (DataTypeUtils.isMapOfType(mapParameters, String.class, Object.class, paramType)) {
+                        args[i] = mapParameters;
+                        continue;
+                    } else if (Map.class.isAssignableFrom(param.getType())) {
+                        // Vérifie si la Map est <Path, byte[]>
+                        if (DataTypeUtils.isMapOfType(mapParameters, Path.class, byte[].class, paramType)) {
+                            args[i] = mapParameters;
+                            continue;
+                        }
+                    }
+                }
+
                 if (parameter != null && parameter != "") {
                     rawValue = parameter;
                     continue;
@@ -207,7 +230,7 @@ public class MethodManager {
                     }
                 }
 
-                args[i] = getObjectInstanceFromRequest(param.getType(), request,"");
+                args[i] = getObjectInstanceFromRequest(param.getType(), request, "");
                 continue;
             }
 
