@@ -15,6 +15,63 @@ public class DataTypeUtils {
 
     private static String dateFormat = "yyyy-MM-dd";
 
+    public static boolean isMapOfType(Object obj, Class<?> keyType, Class<?> valueType, Type param) {
+        if (!(obj instanceof Map<?, ?>)) {
+            return false;
+        }
+
+        Map<?, ?> map = (Map<?, ?>) obj;
+
+        boolean genericOk = false;
+
+        if (param != null && param instanceof ParameterizedType) {
+            ParameterizedType pt = (ParameterizedType) param;
+            Type[] typeArgs = pt.getActualTypeArguments();
+
+            if (typeArgs.length == 2) {
+                Type kType = typeArgs[0];
+                Type vType = typeArgs[1];
+
+                if (kType instanceof Class<?> && vType instanceof Class<?>) {
+                    genericOk = keyType.isAssignableFrom((Class<?>) kType)
+                            && valueType.isAssignableFrom((Class<?>) vType);
+                }
+            }
+        }
+
+        if (!genericOk) {
+            for (Map.Entry<?, ?> entry : map.entrySet()) {
+                if (!keyType.isInstance(entry.getKey()) || !valueType.isInstance(entry.getValue())) {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public static boolean isPrimitiveOrWrapper(Class<?> clazz) {
+        if (clazz.isPrimitive()) {
+            return true;
+        }
+
+        if (clazz == Boolean.class || clazz == Byte.class || clazz == Character.class
+                || clazz == Short.class || clazz == Integer.class || clazz == Long.class
+                || clazz == Float.class || clazz == Double.class || clazz == Void.class) {
+            return true;
+        }
+
+        if (clazz == String.class) {
+            return true;
+        }
+
+        return false;
+    }
+
+    public static boolean isListType(Class<?> clazz) {
+        return List.class.isAssignableFrom(clazz);
+    }
+
     @SuppressWarnings("unchecked")
     public static Object convertListToTargetType(List<Object> valueList, Class<?> targetType, Class<?> elementType)
             throws Exception {
