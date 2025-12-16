@@ -176,7 +176,6 @@ public class FrontControllerServlet extends HttpServlet {
                     }
 
                     return contentRenderManager.renderContent(result, req, resp);
-                    // return RouteStatus.NOT_FOUND.getCode();
 
                 } catch (Exception e) {
                     out.print("Erreur interne : " + e.getMessage());
