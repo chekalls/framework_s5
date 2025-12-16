@@ -1,5 +1,6 @@
 package mg.miniframework.modules;
 
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
@@ -10,6 +11,7 @@ import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -28,9 +30,11 @@ import mg.miniframework.utils.DataTypeUtils;
 public class MethodManager {
 
     private LogManager logManager;
+    private String fileSavePath;
 
     public MethodManager() {
         logManager = new LogManager();
+        fileSavePath = new String();
     }
 
     private Object getObjectInstanceFromRequest(Class<?> clazz, HttpServletRequest request, String prefix)
@@ -159,6 +163,7 @@ public class MethodManager {
 
         Map<String, Object> mapParameters = new HashMap<>();
         Map<Path, byte[]> fileMap = new HashMap<>();
+        Map<Path,mg.miniframework.modules.File> fileMap2 = new HashMap<>();
 
         boolean isMultipart = request.getContentType() != null
                 && request.getContentType().toLowerCase().startsWith("multipart/");
@@ -174,13 +179,29 @@ public class MethodManager {
                     continue;
                 }
 
-                Path fileName = Path.of(submittedName).getFileName();
+                String uploadPath = "/public";
+                String realUploadPath = request.getServletContext().getRealPath(uploadPath);
+                Path uploadDir = Path.of(realUploadPath);
+                Files.createDirectories(uploadDir);
+                Path relativeUploadDir = Path.of(uploadPath);
+
+                Path fileName = relativeUploadDir.resolve(submittedName);
+                // Path absoluteFileName = uploadDir.resolve(submittedName);
                 if (fileName == null) {
                     continue;
                 }
 
+                logManager.insertLog("fileName rested " + fileName.toAbsolutePath(), LogStatus.DEBUG);
+
                 byte[] content = readPartBytes(part);
                 fileMap.put(fileName, content);
+                // mg.miniframework.modules.File uploadFile = new mg.miniframework.modules.File();
+                // uploadFile.setAbsolutePath(absoluteFileName);
+                // uploadFile.setContextPath(fileName);
+                // uploadFile.setContent(content);
+
+                // fileMap2.put(fileName, uploadFile);
+
 
                 logManager.insertLog(
                         "uploaded file captured : " + fileName + " (" + content.length + " bytes)",
@@ -251,5 +272,21 @@ public class MethodManager {
         try (InputStream input = part.getInputStream()) {
             return input.readAllBytes();
         }
+    }
+
+    public LogManager getLogManager() {
+        return logManager;
+    }
+
+    public void setLogManager(LogManager logManager) {
+        this.logManager = logManager;
+    }
+
+    public String getFileSavePath() {
+        return fileSavePath;
+    }
+
+    public void setFileSavePath(String fileSavePath) {
+        this.fileSavePath = fileSavePath;
     }
 }

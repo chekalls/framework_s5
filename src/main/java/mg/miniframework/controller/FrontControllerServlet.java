@@ -104,6 +104,10 @@ public class FrontControllerServlet extends HttpServlet {
                 baseFile = mapSetting.get("jsp_base_path");
                 contentRenderManager.setBaseJspPath(baseFile);
             }
+            if(mapSetting.containsKey("upload_path")){
+                // logManager.insertLog("upload path", null);
+                methodeManager.setFileSavePath(mapSetting.get("upload_path"));
+            }
 
             if (servletContext.getAttribute("routeMap") == null) {
                 RouteMap routeMap = new RouteMap();
