@@ -1,6 +1,7 @@
 package mg.miniframework.utils;
 
 import java.lang.reflect.*;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -8,6 +9,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -15,35 +17,56 @@ public class DataTypeUtils {
 
     private static String dateFormat = "yyyy-MM-dd";
 
-    public static boolean isMapOfType(Object obj, Class<?> keyType, Class<?> valueType, Type param) {
-        if (!(obj instanceof Map<?, ?>)) {
-            return false;
+    public static Map<?, ?> resolveMapForParameter(Type paramType,
+            Map<Path, byte[]> fileMap,
+            Map<String, Object> mapParameters) {
+
+        if (!(paramType instanceof ParameterizedType pt)) {
+            return new HashMap<>();
         }
 
-        Map<?, ?> map = (Map<?, ?>) obj;
+        Type[] typeArgs = pt.getActualTypeArguments();
+        if (typeArgs.length != 2) {
+            return new HashMap<>();
+        }
 
-        boolean genericOk = false;
+        Class<?> keyType = (Class<?>) typeArgs[0];
+        Class<?> valueType = (Class<?>) typeArgs[1];
 
-        if (param != null && param instanceof ParameterizedType) {
-            ParameterizedType pt = (ParameterizedType) param;
-            Type[] typeArgs = pt.getActualTypeArguments();
-
-            if (typeArgs.length == 2) {
-                Type kType = typeArgs[0];
-                Type vType = typeArgs[1];
-
-                if (kType instanceof Class<?> && vType instanceof Class<?>) {
-                    genericOk = keyType.isAssignableFrom((Class<?>) kType)
-                            && valueType.isAssignableFrom((Class<?>) vType);
-                }
+        if (keyType == Path.class && valueType == byte[].class && fileMap != null && !fileMap.isEmpty()) {
+            boolean allMatch = fileMap.entrySet().stream()
+                    .allMatch(e -> e.getKey() instanceof Path && e.getValue() instanceof byte[]);
+            if (allMatch) {
+                return fileMap;
             }
         }
 
-        if (!genericOk) {
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                if (!keyType.isInstance(entry.getKey()) || !valueType.isInstance(entry.getValue())) {
-                    return false;
-                }
+        if (keyType == String.class && valueType == Object.class && mapParameters != null && !mapParameters.isEmpty()) {
+            boolean allMatch = mapParameters.keySet().stream().allMatch(k -> k instanceof String);
+            if (allMatch) {
+                return mapParameters;
+            }
+        }
+
+        return new HashMap<>();
+    }
+
+    public static boolean isMapOfType(Object obj, Class<?> keyType, Class<?> valueType) {
+        if (!(obj instanceof Map<?, ?> map)) {
+            return false;
+        }
+
+        if (map.isEmpty()) {
+            return false;
+        }
+
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            if (!keyType.equals(entry.getKey().getClass())) {
+                return false;
+            }
+
+            if (!valueType.equals(entry.getValue().getClass())) {
+                return false;
             }
         }
 

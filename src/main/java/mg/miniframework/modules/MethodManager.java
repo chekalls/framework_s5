@@ -6,6 +6,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -210,19 +211,10 @@ public class MethodManager {
                 }
             } else if (urlParamAnnotation == null && requestAttributeAnnotation == null) {
 
-                Type paramType = param.getParameterizedType();
                 if (Map.class.isAssignableFrom(param.getType())) {
-                    if (DataTypeUtils.isMapOfType(mapParameters, String.class, Object.class, paramType)) {
-                        args[i] = mapParameters;
-                        continue;
-                    }
 
-                    if (DataTypeUtils.isMapOfType(fileMap, Path.class, byte[].class, paramType)) {
-                        args[i] = fileMap;
-                        continue;
-                    }
-
-                    args[i] = Collections.emptyMap();
+                    Type paramType = param.getParameterizedType();
+                    args[i] = DataTypeUtils.resolveMapForParameter(paramType, fileMap, mapParameters);
                     continue;
                 }
                 args[i] = getObjectInstanceFromRequest(param.getType(), request, "");

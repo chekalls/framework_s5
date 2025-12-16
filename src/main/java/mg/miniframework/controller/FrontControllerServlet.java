@@ -53,6 +53,11 @@ public class FrontControllerServlet extends HttpServlet {
         String relativePath = requestURI.substring(contextPath.length());
         String realPath = servletContext.getRealPath(relativePath);
 
+        Map<String, String> requestData = Map.of("requestURI", requestURI, "contextPath", contextPath, "relativePath",
+                relativePath, "realPath", realPath);
+
+        logManager.insertLog("request data :" + contentRenderManager.convertToJson(requestData), LogStatus.DEBUG);
+
         try {
             if (realPath != null) {
                 File resource = new File(realPath);
