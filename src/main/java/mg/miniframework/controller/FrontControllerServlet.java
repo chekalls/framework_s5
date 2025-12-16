@@ -9,6 +9,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.regex.Pattern;
 
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.MultipartConfig;
@@ -55,10 +56,29 @@ public class FrontControllerServlet extends HttpServlet {
         try {
             if (realPath != null) {
                 File resource = new File(realPath);
-                if (resource.exists() && !resource.isDirectory() &&
-                        relativePath.matches(".*\\.(jsp|css|js|png|jpg|jpeg|gif)$")) {
-                    req.getRequestDispatcher(relativePath).forward(req, resp);
-                    return;
+                if (resource.exists() && !resource.isDirectory()) {
+                    if (relativePath.endsWith(".jsp")) {
+                        RequestDispatcher jspDispatcher = servletContext.getNamedDispatcher("jsp");
+                        if (jspDispatcher != null) {
+                            req.setAttribute("jakarta.servlet.jsp.jspFile", relativePath);
+                            jspDispatcher.forward(req, resp);
+                        } else {
+                            servletContext.getRequestDispatcher(relativePath).forward(req, resp);
+                        }
+                        return;
+                    }
+
+                    if (relativePath.matches(".*\\.(css|js|png|jpg|jpeg|gif)$")) {
+                        RequestDispatcher defaultDispatcher = servletContext.getNamedDispatcher("default");
+                        if (defaultDispatcher != null) {
+                            req.setAttribute("jakarta.servlet.include.request_uri", relativePath);
+                            req.setAttribute("jakarta.servlet.include.servlet_path", relativePath);
+                            defaultDispatcher.forward(req, resp);
+                        } else {
+                            servletContext.getRequestDispatcher(relativePath).forward(req, resp);
+                        }
+                        return;
+                    }
                 }
             }
             if (servletContext.getAttribute("settingMap") == null) {
