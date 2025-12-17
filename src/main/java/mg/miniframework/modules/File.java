@@ -6,10 +6,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
+import mg.miniframework.modules.LogManager.LogStatus;
+
 public class File {
     private Path contextPath;
     private Path absolutePath;
     private byte[] content;
+    private LogManager logManager;
 
     public void save() {
         if (absolutePath == null) {
@@ -27,6 +30,9 @@ public class File {
 
             Path tempFile = Files.createTempFile(parent, "upload_", ".tmp");
             Files.write(tempFile, content);
+            if(logManager!=null){
+                logManager.insertLog("saving file into :"+absolutePath.toString(), LogStatus.DEBUG);
+            }
 
             Files.move(
                     tempFile,
@@ -63,5 +69,13 @@ public class File {
 
     public void setContent(byte[] content) {
         this.content = content;
+    }
+
+    public LogManager getLogManager() {
+        return logManager;
+    }
+
+    public void setLogManager(LogManager logManager) {
+        this.logManager = logManager;
     }
 }

@@ -186,7 +186,7 @@ public class MethodManager {
                 Path relativeUploadDir = Path.of(uploadPath);
 
                 Path fileName = relativeUploadDir.resolve(submittedName);
-                // Path absoluteFileName = uploadDir.resolve(submittedName);
+                Path absoluteFileName = uploadDir.resolve(submittedName);
                 if (fileName == null) {
                     continue;
                 }
@@ -195,12 +195,13 @@ public class MethodManager {
 
                 byte[] content = readPartBytes(part);
                 fileMap.put(fileName, content);
-                // mg.miniframework.modules.File uploadFile = new mg.miniframework.modules.File();
-                // uploadFile.setAbsolutePath(absoluteFileName);
-                // uploadFile.setContextPath(fileName);
-                // uploadFile.setContent(content);
+                mg.miniframework.modules.File uploadFile = new mg.miniframework.modules.File();
+                uploadFile.setAbsolutePath(absoluteFileName);
+                uploadFile.setContextPath(fileName);
+                uploadFile.setContent(content);
+                uploadFile.setLogManager(logManager);
 
-                // fileMap2.put(fileName, uploadFile);
+                fileMap2.put(fileName, uploadFile);
 
 
                 logManager.insertLog(
@@ -235,7 +236,8 @@ public class MethodManager {
                 if (Map.class.isAssignableFrom(param.getType())) {
 
                     Type paramType = param.getParameterizedType();
-                    args[i] = DataTypeUtils.resolveMapForParameter(paramType, fileMap, mapParameters);
+                    args[i] =  DataTypeUtils.resolveMapForParameter(fileMap2,fileMap, paramType, mapParameters);
+                    // args[i] = DataTypeUtils.resolveMapForParameter(paramType, fileMap, mapParameters);
                     continue;
                 }
                 args[i] = getObjectInstanceFromRequest(param.getType(), request, "");

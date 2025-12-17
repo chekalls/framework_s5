@@ -13,9 +13,54 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import mg.miniframework.modules.File;
+
 public class DataTypeUtils {
 
     private static String dateFormat = "yyyy-MM-dd";
+
+    public static Map<?, ?> resolveMapForParameter(Map<Path, File> fileMap, Map<Path, byte[]> byteFileMap,
+            Type paramType,
+            Map<String, Object> mapParameters) {
+        if (!(paramType instanceof ParameterizedType pt)) {
+            return new HashMap<>();
+        }
+
+
+        Type[] typeArgs = pt.getActualTypeArguments();
+        if (typeArgs.length != 2) {
+            return new HashMap<>();
+        }
+
+        Class<?> keyType = (Class<?>) typeArgs[0];
+        Class<?> valueType = (Class<?>) typeArgs[1];
+
+
+        if (keyType == Path.class && valueType == byte[].class && byteFileMap != null && !byteFileMap.isEmpty()) {
+            boolean allMatch = byteFileMap.entrySet().stream()
+                    .allMatch(e -> e.getKey() instanceof Path && e.getValue() instanceof byte[]);
+            if (allMatch) {
+                return byteFileMap;
+            }
+        }
+
+        if (keyType == Path.class && valueType == File.class && fileMap != null && !fileMap.isEmpty()) {
+            boolean allMatch = fileMap.entrySet().stream()
+                    .allMatch(e -> e.getKey() instanceof Path && e.getValue() instanceof File);
+            if (allMatch) {
+                return fileMap;
+            }
+        }
+
+        if (keyType == String.class && valueType == Object.class && mapParameters != null && !mapParameters.isEmpty()) {
+            boolean allMatch = mapParameters.keySet().stream().allMatch(k -> k instanceof String);
+            if (allMatch) {
+                return mapParameters;
+            }
+        }
+
+        return new HashMap<>();
+    }
 
     public static Map<?, ?> resolveMapForParameter(Type paramType,
             Map<Path, byte[]> fileMap,
