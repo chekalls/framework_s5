@@ -1,7 +1,6 @@
 package mg.miniframework.modules;
 
 import java.io.IOException;
-import java.io.PrintWriter;
 import java.util.Map;
 
 import jakarta.servlet.RequestDispatcher;
@@ -11,65 +10,87 @@ import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.utils.JsonUtils;
 
 public class ContentRenderManager {
+
     private LogManager logManager;
-    private String baseJspPath;
+    private String baseJspPath = "";
 
     public ContentRenderManager() {
-        logManager = new LogManager();
-        baseJspPath = ""; 
+        this.logManager = new LogManager();
     }
 
+    /* =======================
+       JSON
+       ======================= */
     public String convertToJson(Object object) {
-        if (object instanceof ModelView) {
-            Map<String, Object> data = ((ModelView) object).getDataMap();
-            return JsonUtils.mapToJson(data);
-        } else {
-            return JsonUtils.objectToJson(object);
+        if (object instanceof ModelView mv) {
+            return JsonUtils.mapToJson(mv.getDataMap());
         }
+        return JsonUtils.objectToJson(object);
     }
 
-    public int renderContent(Object resultType, HttpServletRequest request, HttpServletResponse response)
+    /* =======================
+       RENDER
+       ======================= */
+    public int renderContent(
+            Object result,
+            HttpServletRequest request,
+            HttpServletResponse response)
             throws ServletException, IOException {
 
-        if (resultType == null) {
+        if (result == null) {
             response.setStatus(HttpServletResponse.SC_NO_CONTENT);
-            return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
+            return RouteStatus.NOT_FOUND.getCode();
         }
 
-        if (resultType instanceof String) {
+        /* =======================
+           STRING
+           ======================= */
+        if (result instanceof String str) {
             response.setContentType("text/html;charset=UTF-8");
-            PrintWriter out = response.getWriter();
-            out.print((String) resultType);
-            out.flush();
+            response.getWriter().print(str);
             return RouteStatus.RETURN_STRING.getCode();
+        }
 
-        } else if (resultType instanceof ModelView) {
-            ModelView mv = (ModelView) resultType;
+        /* =======================
+           MODEL VIEW (JSP)
+           ======================= */
+        if (result instanceof ModelView mv) {
 
             for (Map.Entry<String, Object> entry : mv.getDataMap().entrySet()) {
                 request.setAttribute(entry.getKey(), entry.getValue());
             }
 
-            String jspFile = mv.getView();
-            if (!jspFile.startsWith("/")) {
-                jspFile = "/" + jspFile;
-            }
-            String forwardPath = baseJspPath + jspFile;
+            String jsp = normalizeJspPath(mv.getView());
+            String forwardPath = baseJspPath + jsp;
 
-            RequestDispatcher dispatcher = request.getRequestDispatcher(forwardPath);
+            RequestDispatcher dispatcher =
+                    request.getRequestDispatcher(forwardPath);
+
             dispatcher.forward(request, response);
             return RouteStatus.RETURN_MODEL_VIEW.getCode();
         }
 
-
+        /* =======================
+           UNKNOWN
+           ======================= */
         response.setContentType("text/plain;charset=UTF-8");
-        PrintWriter out = response.getWriter();
-        out.println("Return type inconnu : " + resultType.getClass().getName());
-        out.flush();
+        response.getWriter().println(
+                "Return type inconnu : " + result.getClass().getName()
+        );
+
         return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
     }
 
-    // Getter / Setter
+    /* =======================
+       UTILS
+       ======================= */
+    private String normalizeJspPath(String jsp) {
+        if (jsp == null || jsp.isEmpty()) {
+            throw new IllegalArgumentException("Le nom de la vue JSP est vide");
+        }
+        return jsp.startsWith("/") ? jsp : "/" + jsp;
+    }
+
     public LogManager getLogManager() {
         return logManager;
     }
@@ -83,6 +104,12 @@ public class ContentRenderManager {
     }
 
     public void setBaseJspPath(String baseJspPath) {
-        this.baseJspPath = baseJspPath;
+        if (baseJspPath == null) {
+            this.baseJspPath = "";
+        } else {
+            this.baseJspPath = baseJspPath.endsWith("/")
+                    ? baseJspPath.substring(0, baseJspPath.length() - 1)
+                    : baseJspPath;
+        }
     }
 }

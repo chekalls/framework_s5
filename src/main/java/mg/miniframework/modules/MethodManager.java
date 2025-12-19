@@ -1,17 +1,27 @@
 package mg.miniframework.modules;
 
-import java.io.PrintWriter;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
+import java.lang.reflect.ParameterizedType;
+import java.lang.reflect.Type;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.Part;
 import mg.miniframework.annotation.RequestAttribute;
 import mg.miniframework.annotation.UrlParam;
 import mg.miniframework.modules.LogManager.LogStatus;
@@ -20,14 +30,11 @@ import mg.miniframework.utils.DataTypeUtils;
 public class MethodManager {
 
     private LogManager logManager;
+    private String fileSavePath;
 
     public MethodManager() {
         logManager = new LogManager();
-    }
-
-    @Deprecated
-    private Object handleArrayType() {
-        return null;
+        fileSavePath = new String();
     }
 
     private Object getObjectInstanceFromRequest(Class<?> clazz, HttpServletRequest request, String prefix)
@@ -45,9 +52,6 @@ public class MethodManager {
         logManager.insertLog("class name : " + className, LogStatus.DEBUG);
         logManager.insertLog("==== found " + classFields.length + " fields", LogStatus.DEBUG);
 
-        // Determine the base prefix for attributes. If a prefix is provided, use it as-is
-        // (it should represent the path up to the current object, e.g. "person.address").
-        // Otherwise the base prefix is the class name (top-level parameter name).
         String basePrefix = (prefix == null || prefix.isEmpty()) ? className : prefix;
 
         Constructor<?> constructor = clazz.getDeclaredConstructor();
@@ -59,7 +63,6 @@ public class MethodManager {
             field.setAccessible(true);
 
             if (!DataTypeUtils.isArrayType(field.getType())) {
-                // attribute name is like "<basePrefix>.<fieldName>" -> e.g. "person.name" or "person.address.street"
                 String attributeName = (basePrefix + "." + field.getName()).strip();
                 logManager.insertLog(
                         "---- object parameter found :[" + field.getName() + " ::'" + field.getType().getName()
@@ -71,9 +74,8 @@ public class MethodManager {
                 if (fieldValue != null && !fieldValue.isEmpty()) {
                     Object converted = DataTypeUtils.convertParam(fieldValue, field.getType());
                     field.set(instance, converted);
-                } else if (!DataTypeUtils.isPrimitiveOrWrapper(field.getType()) && !field.getType().equals(String.class)) {
-                    // Attempt to populate nested object even when there's no direct parameter for the object itself.
-                    // For nested objects, recurse with prefix equal to the attributeName (so nested fields use it as base).
+                } else if (!DataTypeUtils.isPrimitiveOrWrapper(field.getType())
+                        && !field.getType().equals(String.class)) {
                     Object subObject = getObjectInstanceFromRequest(field.getType(), request, attributeName);
                     field.set(instance, subObject);
                 }
@@ -158,14 +160,60 @@ public class MethodManager {
         Object instance = clazz.getDeclaredConstructor().newInstance();
         Parameter[] parameters = method.getParameters();
         Object[] args = new Object[parameters.length];
-        PrintWriter writer = resp.getWriter();
 
         Map<String, Object> mapParameters = new HashMap<>();
-        Enumeration<String> parameterNames = request.getParameterNames();
+        Map<Path, byte[]> fileMap = new HashMap<>();
+        Map<Path,mg.miniframework.modules.File> fileMap2 = new HashMap<>();
 
-        while (parameterNames.hasMoreElements()) {
-            String param = parameterNames.nextElement();
-            mapParameters.put(param, request.getParameter(param));
+        boolean isMultipart = request.getContentType() != null
+                && request.getContentType().toLowerCase().startsWith("multipart/");
+
+        if (isMultipart) {
+            Charset encoding = getRequestEncoding(request);
+            for (Part part : request.getParts()) {
+                String submittedName = part.getSubmittedFileName();
+                boolean isFilePart = submittedName != null && !submittedName.isBlank();
+
+                if (!isFilePart) {
+                    mapParameters.put(part.getName(), readPartValue(part, encoding));
+                    continue;
+                }
+
+                String uploadPath = "/public";
+                String realUploadPath = request.getServletContext().getRealPath(uploadPath);
+                Path uploadDir = Path.of(realUploadPath);
+                Files.createDirectories(uploadDir);
+                Path relativeUploadDir = Path.of(uploadPath);
+
+                Path fileName = relativeUploadDir.resolve(submittedName);
+                Path absoluteFileName = uploadDir.resolve(submittedName);
+                if (fileName == null) {
+                    continue;
+                }
+
+                logManager.insertLog("fileName rested " + fileName.toAbsolutePath(), LogStatus.DEBUG);
+
+                byte[] content = readPartBytes(part);
+                fileMap.put(fileName, content);
+                mg.miniframework.modules.File uploadFile = new mg.miniframework.modules.File();
+                uploadFile.setAbsolutePath(absoluteFileName);
+                uploadFile.setContextPath(fileName);
+                uploadFile.setContent(content);
+                uploadFile.setLogManager(logManager);
+
+                fileMap2.put(fileName, uploadFile);
+
+
+                logManager.insertLog(
+                        "uploaded file captured : " + fileName + " (" + content.length + " bytes)",
+                        LogStatus.DEBUG);
+            }
+        } else {
+            Enumeration<String> parameterNames = request.getParameterNames();
+            while (parameterNames.hasMoreElements()) {
+                String param = parameterNames.nextElement();
+                mapParameters.put(param, request.getParameter(param));
+            }
         }
 
         for (int i = 0; i < parameters.length; i++) {
@@ -185,29 +233,14 @@ public class MethodManager {
                 }
             } else if (urlParamAnnotation == null && requestAttributeAnnotation == null) {
 
-                String parameter = request.getParameter(param.getName());
+                if (Map.class.isAssignableFrom(param.getType())) {
 
-                if (parameter != null && parameter != "") {
-                    rawValue = parameter;
+                    Type paramType = param.getParameterizedType();
+                    args[i] =  DataTypeUtils.resolveMapForParameter(fileMap2,fileMap, paramType, mapParameters);
+                    // args[i] = DataTypeUtils.resolveMapForParameter(paramType, fileMap, mapParameters);
                     continue;
                 }
-
-                if (param.getType().equals(Map.class)) {
-                    boolean ok = true;
-                    for (Map.Entry<?, ?> e : mapParameters.entrySet()) {
-                        if (!(e.getKey() instanceof String)) {
-                            ok = false;
-                            break;
-                        }
-                    }
-
-                    if (ok) {
-                        args[i] = mapParameters;
-                        continue;
-                    }
-                }
-
-                args[i] = getObjectInstanceFromRequest(param.getType(), request,"");
+                args[i] = getObjectInstanceFromRequest(param.getType(), request, "");
                 continue;
             }
 
@@ -215,5 +248,47 @@ public class MethodManager {
         }
 
         return method.invoke(instance, args);
+    }
+
+    private Charset getRequestEncoding(HttpServletRequest request) {
+        String encoding = request.getCharacterEncoding();
+        if (encoding == null || encoding.isBlank()) {
+            return StandardCharsets.UTF_8;
+        }
+
+        try {
+            return Charset.forName(encoding);
+        } catch (Exception ex) {
+            return StandardCharsets.UTF_8;
+        }
+    }
+
+    private String readPartValue(Part part, Charset encoding) throws IOException {
+        try (InputStream input = part.getInputStream()) {
+            byte[] bytes = input.readAllBytes();
+            return new String(bytes, encoding);
+        }
+    }
+
+    private byte[] readPartBytes(Part part) throws IOException {
+        try (InputStream input = part.getInputStream()) {
+            return input.readAllBytes();
+        }
+    }
+
+    public LogManager getLogManager() {
+        return logManager;
+    }
+
+    public void setLogManager(LogManager logManager) {
+        this.logManager = logManager;
+    }
+
+    public String getFileSavePath() {
+        return fileSavePath;
+    }
+
+    public void setFileSavePath(String fileSavePath) {
+        this.fileSavePath = fileSavePath;
     }
 }
