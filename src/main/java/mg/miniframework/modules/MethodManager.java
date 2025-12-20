@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -152,14 +153,15 @@ public class MethodManager {
         return instance;
     }
 
-    public Object invokeCorrespondingMethod(Method method, Class<?> clazz, Map<String, String> params,
+    public Object invokeCorrespondingMethod(CachedMethodInfo cachedInfo, Class<?> clazz, Map<String, String> params,
             HttpServletRequest request,
             HttpServletResponse resp)
             throws Exception {
 
+        Method method = cachedInfo.getMethod();
         Object instance = clazz.getDeclaredConstructor().newInstance();
-        Parameter[] parameters = method.getParameters();
-        Object[] args = new Object[parameters.length];
+        List<CachedMethodInfo.ParameterInfo> paramInfos = cachedInfo.getParamInfos();
+        Object[] args = new Object[paramInfos.size()];
 
         Map<String, Object> mapParameters = new HashMap<>();
         Map<Path, byte[]> fileMap = new HashMap<>();
@@ -216,35 +218,47 @@ public class MethodManager {
             }
         }
 
-        for (int i = 0; i < parameters.length; i++) {
-            Parameter param = parameters[i];
-            String rawValue = null;
+        for (int i = 0; i < paramInfos.size(); i++) {
+            CachedMethodInfo.ParameterInfo info = paramInfos.get(i);
+            Object argValue = null;
 
-            UrlParam urlParamAnnotation = param.getAnnotation(UrlParam.class);
-            RequestAttribute requestAttributeAnnotation = param.getAnnotation(RequestAttribute.class);
-            if (urlParamAnnotation != null && requestAttributeAnnotation == null) {
-                rawValue = params.getOrDefault(urlParamAnnotation.name(),
-                        params.getOrDefault(param.getName(), null));
-
-            } else if (urlParamAnnotation == null && requestAttributeAnnotation != null) {
-                rawValue = request.getParameter(requestAttributeAnnotation.paramName());
-                if (rawValue == null || rawValue.isEmpty()) {
-                    rawValue = requestAttributeAnnotation.defaultValue();
+            if (info.getUrlParamName() != null) {
+                argValue = params.getOrDefault(info.getUrlParamName(), null);
+            } else if (info.getRequestParamName() != null) {
+                argValue = request.getParameter(info.getRequestParamName());
+                if (argValue == null || argValue.toString().isEmpty()) {
+                    argValue = info.getDefaultValue();
                 }
-            } else if (urlParamAnnotation == null && requestAttributeAnnotation == null) {
+            } else {
+                if (Map.class.isAssignableFrom(info.getType())) {
+                    Type paramType = info.getGenericType();
+                    if (DataTypeUtils.isMapOfType(mapParameters, String.class, Object.class, paramType)) {
+                        logManager.insertLog("map is assignable for String,Object", LogStatus.DEBUG);
+                        argValue = mapParameters;
+                    } else if (DataTypeUtils.isMapOfType(fileMap, Path.class, byte[].class, paramType)) {
+                        argValue = fileMap;
+                        logManager.insertLog("map is assignable for Path,byte[]", LogStatus.DEBUG);
 
-                if (Map.class.isAssignableFrom(param.getType())) {
+                    } else if (DataTypeUtils.isMapOfType(fileMap2, Path.class, mg.miniframework.modules.File.class, paramType)) {
+                        argValue = fileMap2;
+                        logManager.insertLog("map is assignable for Path,File", LogStatus.DEBUG);
 
-                    Type paramType = param.getParameterizedType();
-                    args[i] =  DataTypeUtils.resolveMapForParameter(fileMap2,fileMap, paramType, mapParameters);
-                    // args[i] = DataTypeUtils.resolveMapForParameter(paramType, fileMap, mapParameters);
-                    continue;
+                    } else {
+                        logManager.insertLog("empty map assigned", LogStatus.DEBUG);
+
+                        argValue = Collections.emptyMap();
+                    }
+                } else {
+                    argValue = getObjectInstanceFromRequest(info.getType(), request, "");
                 }
-                args[i] = getObjectInstanceFromRequest(param.getType(), request, "");
-                continue;
             }
 
-            args[i] = DataTypeUtils.convertParam(rawValue, param.getType());
+            if (argValue != null && !info.getType().isInstance(argValue)) {
+                logManager.insertLog("convertion of type required ", LogStatus.DEBUG);
+                argValue = DataTypeUtils.convertParam(argValue.toString(), info.getType());
+            }
+
+            args[i] = argValue;
         }
 
         return method.invoke(instance, args);
