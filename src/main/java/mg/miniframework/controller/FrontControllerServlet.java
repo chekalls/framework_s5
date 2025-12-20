@@ -33,6 +33,7 @@ public class FrontControllerServlet extends HttpServlet {
     private LogManager logManager;
     private ConfigLoader configLoader;
     private ContentRenderManager contentRenderManager;
+    private MetricsManager metricsManager;
 
     @Override
     public void init() throws ServletException {
@@ -40,6 +41,7 @@ public class FrontControllerServlet extends HttpServlet {
         this.logManager = new LogManager();
         this.configLoader = new ConfigLoader();
         this.contentRenderManager = new ContentRenderManager();
+        this.metricsManager = new MetricsManager();
     }
 
     @SuppressWarnings("unchecked")
@@ -47,11 +49,22 @@ public class FrontControllerServlet extends HttpServlet {
     protected void service(HttpServletRequest req, HttpServletResponse resp)
             throws ServletException, IOException {
 
+        long startTime = System.currentTimeMillis();
+        metricsManager.incrementRequestCount();
+
         ServletContext servletContext = req.getServletContext();
         String requestURI = req.getRequestURI();
         String contextPath = req.getContextPath();
         String relativePath = requestURI.substring(contextPath.length());
         String realPath = servletContext.getRealPath(relativePath);
+
+        if (relativePath.equals("/metrics")) {
+            resp.setContentType("text/plain;charset=UTF-8");
+            resp.getWriter().print(metricsManager.exportMetrics());
+            long duration = System.currentTimeMillis() - startTime;
+            metricsManager.addRequestDuration(duration);
+            return;
+        }
 
         Map<String, String> requestData = Map.of("requestURI", requestURI, "contextPath", contextPath, "relativePath",
                 relativePath, "realPath", realPath);
@@ -142,7 +155,17 @@ public class FrontControllerServlet extends HttpServlet {
                 print404(req, resp, relativePath, req.getMethod(), routeMap);
             }
 
+            if (status.equals(RouteStatus.RETURN_TYPE_UNKNOWN.getCode())) {
+                metricsManager.incrementErrorCount();
+            }
+
+            long duration = System.currentTimeMillis() - startTime;
+            metricsManager.addRequestDuration(duration);
+
         } catch (Exception e) {
+            long duration = System.currentTimeMillis() - startTime;
+            metricsManager.addRequestDuration(duration);
+            metricsManager.incrementErrorCount();
             resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             resp.getWriter().print("Erreur interne : " + e.getMessage());
         }
@@ -199,6 +222,8 @@ public class FrontControllerServlet extends HttpServlet {
     private void print404(HttpServletRequest req, HttpServletResponse resp,
             String urlPath, String httpMethod,
             RouteMap routeMap) throws IOException {
+
+        metricsManager.incrementErrorCount();
 
         resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
         resp.setContentType("text/html;charset=UTF-8");
