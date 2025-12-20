@@ -14,8 +14,8 @@ import mg.miniframework.annotation.UrlMap;
 
 public class RouteMap {
 
-    private Map<Class<?>, List<Method>> methodMaps;
-    private Map<Url, Method> urlMethodsMap;
+    private Map<Class<?>, List<CachedMethodInfo>> methodMaps;
+    private Map<Url, CachedMethodInfo> urlMethodsMap;
 
     public RouteMap() {
         methodMaps = new HashMap<>();
@@ -32,20 +32,21 @@ public class RouteMap {
 
         String baseUrl = controllerAnnotation.mapping();
 
-        List<Method> annotatedMethods = new ArrayList<>();
+        List<CachedMethodInfo> annotatedMethods = new ArrayList<>();
 
 
         for (Method m : controller.getDeclaredMethods()) {
             if (m.isAnnotationPresent(mg.miniframework.annotation.UrlMap.class)) {
                 UrlMap urlMapAnnotation = m.getAnnotation(UrlMap.class);
-                annotatedMethods.add(m);
+                CachedMethodInfo cachedInfo = new CachedMethodInfo(m);
+                annotatedMethods.add(cachedInfo);
 
                 String fullUrl = normalizeUrl(baseUrl, urlMapAnnotation.value());
 
                 Url newUrl = new Url();
                 newUrl.setUrlPath(fullUrl);
                 if (isAMapping(m, newUrl)) {
-                    urlMethodsMap.put(newUrl, m);
+                    urlMethodsMap.put(newUrl, cachedInfo);
                 }
             }
         }
@@ -81,19 +82,19 @@ public class RouteMap {
         return fullUrl;
     }
 
-    public Map<Class<?>, List<Method>> getMethodMaps() {
+    public Map<Class<?>, List<CachedMethodInfo>> getMethodMaps() {
         return methodMaps;
     }
 
-    public void setMethodMaps(Map<Class<?>, List<Method>> methodMaps) {
+    public void setMethodMaps(Map<Class<?>, List<CachedMethodInfo>> methodMaps) {
         this.methodMaps = methodMaps;
     }
 
-    public Map<Url, Method> getUrlMethodsMap() {
+    public Map<Url, CachedMethodInfo> getUrlMethodsMap() {
         return urlMethodsMap;
     }
 
-    public void setUrlMethodsMap(Map<Url, Method> urlMethodsMap) {
+    public void setUrlMethodsMap(Map<Url, CachedMethodInfo> urlMethodsMap) {
         this.urlMethodsMap = urlMethodsMap;
     }
 }

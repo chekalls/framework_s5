@@ -1,6 +1,7 @@
 package mg.miniframework.modules;
 
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
+import java.util.concurrent.atomic.DoubleAdder;
 
 /**
  * Gestionnaire de métriques pour l'instrumentation du framework.
@@ -8,52 +9,52 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class MetricsManager {
 
-    private final AtomicLong totalRequests = new AtomicLong(0);
-    private final AtomicLong errorRequests = new AtomicLong(0);
-    private final AtomicLong totalDurationMs = new AtomicLong(0);
+    private final LongAdder totalRequests = new LongAdder();
+    private final LongAdder errorRequests = new LongAdder();
+    private final DoubleAdder totalDurationMs = new DoubleAdder();
 
     /**
      * Incrémente le compteur de requêtes totales.
      */
     public void incrementRequestCount() {
-        totalRequests.incrementAndGet();
+        totalRequests.increment();
     }
 
     /**
      * Incrémente le compteur d'erreurs.
      */
     public void incrementErrorCount() {
-        errorRequests.incrementAndGet();
+        errorRequests.increment();
     }
 
     /**
      * Ajoute la durée d'une requête (en ms) pour calculer la moyenne.
      */
     public void addRequestDuration(long durationMs) {
-        totalDurationMs.addAndGet(durationMs);
+        totalDurationMs.add(durationMs);
     }
 
     /**
      * Retourne le nombre total de requêtes.
      */
     public long getTotalRequests() {
-        return totalRequests.get();
+        return totalRequests.sum();
     }
 
     /**
      * Retourne le nombre d'erreurs.
      */
     public long getErrorRequests() {
-        return errorRequests.get();
+        return errorRequests.sum();
     }
 
     /**
      * Calcule la durée moyenne des requêtes (en ms).
      */
     public double getAverageDurationMs() {
-        long total = totalRequests.get();
+        long total = getTotalRequests();
         if (total == 0) return 0.0;
-        return (double) totalDurationMs.get() / total;
+        return totalDurationMs.sum() / total;
     }
 
     /**
