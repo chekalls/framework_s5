@@ -256,7 +256,7 @@ Ce document liste toutes les fonctionnalités déjà implémentées dans le fram
 
 ```
 mg.miniframework/
-├── annotation/          # Annotations du framework
+├── annotation/        # Annotations du framework
 │   ├── Controller.java
 │   ├── GetMapping.java
 │   ├── PostMapping.java
@@ -266,9 +266,9 @@ mg.miniframework/
 │   ├── RequestAttribute.java
 │   ├── FormParam.java
 │   └── Route.java
-├── controller/          # Front Controller
+├── controller/        # Front Controller
 │   └── FrontControllerServlet.java
-├── modules/             # Modules principaux
+├── modules/           # Modules principaux
 │   ├── ConfigLoader.java
 │   ├── ContentRenderManager.java
 │   ├── File.java
@@ -279,11 +279,11 @@ mg.miniframework/
 │   ├── RouteMap.java
 │   ├── RouteStatus.java
 │   └── Url.java
-└── utils/               # Utilitaires
-    ├── DataTypeUtils.java
-    ├── DateUtils.java
-    ├── JsonUtils.java
-    └── RoutePatternUtils.java
+└── utils/             # Utilitaires
+  ├── DataTypeUtils.java
+  ├── DateUtils.java
+  ├── JsonUtils.java
+  └── RoutePatternUtils.java
 ```
 
 ---
@@ -294,37 +294,37 @@ mg.miniframework/
 @Controller(mapping = "/users")
 public class UserController {
 
-    @UrlMap("/{id}")
-    @GetMapping
-    public ModelView show(@UrlParam(name = "id") int userId) {
-        ModelView mv = new ModelView();
-        mv.setView("user/show.jsp");
-        mv.setData("userId", userId);
-        return mv;
-    }
+  @UrlMap("/{id}")
+  @GetMapping
+  public ModelView show(@UrlParam(name = "id") int userId) {
+    ModelView mv = new ModelView();
+    mv.setView("user/show.jsp");
+    mv.setData("userId", userId);
+    return mv;
+  }
 
-    @UrlMap("/")
-    @GetMapping
-    @JsonUrl
-    public List<User> list() {
-        return userService.findAll();
-    }
+  @UrlMap("/")
+  @GetMapping
+  @JsonUrl
+  public List<User> list() {
+    return userService.findAll();
+  }
 
-    @UrlMap("/create")
-    @PostMapping
-    public String create(User user) {
-        userService.save(user);
-        return "User created successfully!";
-    }
+  @UrlMap("/create")
+  @PostMapping
+  public String create(User user) {
+    userService.save(user);
+    return "User created successfully!";
+  }
 
-    @UrlMap("/upload")
-    @PostMapping
-    public String upload(Map<Path, File> files) {
-        for (var entry : files.entrySet()) {
-            entry.getValue().save();
-        }
-        return "Files uploaded successfully!";
+  @UrlMap("/upload")
+  @PostMapping
+  public String upload(Map<Path, File> files) {
+    for (var entry : files.entrySet()) {
+      entry.getValue().save();
     }
+    return "Files uploaded successfully!";
+  }
 }
 ```
 

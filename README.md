@@ -45,19 +45,19 @@ Ce document contient :
 @Controller(mapping = "/api/users")
 public class UserController {
 
-    @UrlMap("/{id}")
-    @GetMapping
-    @JsonUrl
-    public User getUser(@UrlParam(name = "id") int id) {
-        return userService.findById(id);
-    }
+  @UrlMap("/{id}")
+  @GetMapping
+  @JsonUrl
+  public User getUser(@UrlParam(name = "id") int id) {
+    return userService.findById(id);
+  }
 
-    @UrlMap("/")
-    @PostMapping
-    public String createUser(User user) {
-        userService.save(user);
-        return "User created!";
-    }
+  @UrlMap("/")
+  @PostMapping
+  public String createUser(User user) {
+    userService.save(user);
+    return "User created!";
+  }
 }
 ```
 
