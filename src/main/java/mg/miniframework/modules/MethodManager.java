@@ -22,6 +22,7 @@ import java.util.Map;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
 import jakarta.servlet.http.Part;
 import mg.miniframework.annotation.RequestAttribute;
 import mg.miniframework.annotation.UrlParam;
@@ -165,10 +166,13 @@ public class MethodManager {
 
         Map<String, Object> mapParameters = new HashMap<>();
         Map<Path, byte[]> fileMap = new HashMap<>();
-        Map<Path,mg.miniframework.modules.File> fileMap2 = new HashMap<>();
+        Map<Path, mg.miniframework.modules.File> fileMap2 = new HashMap<>();
+        Map<String, Object> sessionVariables = new HashMap<>();
 
         boolean isMultipart = request.getContentType() != null
                 && request.getContentType().toLowerCase().startsWith("multipart/");
+        boolean hasSessionVar = false;
+        HttpSession session = request.getSession();
 
         if (isMultipart) {
             Charset encoding = getRequestEncoding(request);
@@ -205,7 +209,6 @@ public class MethodManager {
 
                 fileMap2.put(fileName, uploadFile);
 
-
                 logManager.insertLog(
                         "uploaded file captured : " + fileName + " (" + content.length + " bytes)",
                         LogStatus.DEBUG);
@@ -222,7 +225,9 @@ public class MethodManager {
             CachedMethodInfo.ParameterInfo info = paramInfos.get(i);
             Object argValue = null;
 
-            if (info.getUrlParamName() != null) {
+            if (info.getFormParamName() != null) {
+                argValue = request.getParameter(info.getFormParamName());
+            } else if (info.getUrlParamName() != null) {
                 argValue = params.getOrDefault(info.getUrlParamName(), null);
             } else if (info.getRequestParamName() != null) {
                 argValue = request.getParameter(info.getRequestParamName());
@@ -233,13 +238,26 @@ public class MethodManager {
                 if (Map.class.isAssignableFrom(info.getType())) {
                     Type paramType = info.getGenericType();
                     if (DataTypeUtils.isMapOfType(mapParameters, String.class, Object.class, paramType)) {
-                        logManager.insertLog("map is assignable for String,Object", LogStatus.DEBUG);
-                        argValue = mapParameters;
+                        if (info.isSessionVariables()) {
+                            Enumeration<String> sessionVars = session.getAttributeNames();
+                            while (sessionVars.hasMoreElements()) {
+                                String var = sessionVars.nextElement();
+                                sessionVariables.put(var, session.getAttribute(var));
+                            }
+                            logManager.insertLog("map is assignable for String,Object and for session", LogStatus.DEBUG);
+                            hasSessionVar = true;
+                            argValue = sessionVariables;
+                        } else {
+                            logManager.insertLog("map is assignable for String,Object", LogStatus.DEBUG);
+                            argValue = mapParameters;
+                        }
+
                     } else if (DataTypeUtils.isMapOfType(fileMap, Path.class, byte[].class, paramType)) {
                         argValue = fileMap;
                         logManager.insertLog("map is assignable for Path,byte[]", LogStatus.DEBUG);
 
-                    } else if (DataTypeUtils.isMapOfType(fileMap2, Path.class, mg.miniframework.modules.File.class, paramType)) {
+                    } else if (DataTypeUtils.isMapOfType(fileMap2, Path.class, mg.miniframework.modules.File.class,
+                            paramType)) {
                         argValue = fileMap2;
                         logManager.insertLog("map is assignable for Path,File", LogStatus.DEBUG);
 
@@ -261,7 +279,13 @@ public class MethodManager {
             args[i] = argValue;
         }
 
-        return method.invoke(instance, args);
+        Object result = method.invoke(instance, args);
+        if (hasSessionVar) {
+            for (Map.Entry<String, Object> sessionVar : sessionVariables.entrySet()) {
+                session.setAttribute(sessionVar.getKey(), sessionVar.getValue());
+            }
+        }
+        return result;
     }
 
     private Charset getRequestEncoding(HttpServletRequest request) {

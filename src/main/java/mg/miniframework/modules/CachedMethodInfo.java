@@ -9,6 +9,7 @@ import java.util.Map;
 
 import mg.miniframework.annotation.FormParam;
 import mg.miniframework.annotation.RequestAttribute;
+import mg.miniframework.annotation.SessionVariables;
 import mg.miniframework.annotation.UrlParam;
 
 public class CachedMethodInfo {
@@ -44,6 +45,11 @@ public class CachedMethodInfo {
                 info.setRequired(formParam.required());
             }
 
+            SessionVariables sessionVariables = param.getAnnotation(SessionVariables.class);
+            if(sessionVariables!=null){
+                info.setSessionVariables(true);
+            }
+
             infos.add(info);
         }
         return infos;
@@ -65,6 +71,7 @@ public class CachedMethodInfo {
         private String defaultValue;
         private String formParamName;
         private boolean required;
+        private boolean isSessionVariables;
 
         public ParameterInfo(Class<?> type, java.lang.reflect.Type genericType) {
             this.type = type;
@@ -83,5 +90,13 @@ public class CachedMethodInfo {
         public void setFormParamName(String formParamName) { this.formParamName = formParamName; }
         public boolean isRequired() { return required; }
         public void setRequired(boolean required) { this.required = required; }
+
+        public boolean isSessionVariables() {
+            return isSessionVariables;
+        }
+
+        public void setSessionVariables(boolean isSessionVariables) {
+            this.isSessionVariables = isSessionVariables;
+        }
     }
 }
