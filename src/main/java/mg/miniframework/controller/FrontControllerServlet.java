@@ -21,8 +21,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
 import mg.miniframework.annotation.JsonUrl;
 import mg.miniframework.modules.*;
-import mg.miniframework.modules.CachedMethodInfo;
 import mg.miniframework.modules.LogManager.LogStatus;
+import mg.miniframework.modules.security.SecurityManager;
+import mg.miniframework.modules.security.AuthenticationProvider;
 import mg.miniframework.utils.RoutePatternUtils;
 
 @WebServlet(name = "FrontControllerServlet", urlPatterns = "/*")
@@ -35,6 +36,7 @@ public class FrontControllerServlet extends HttpServlet {
     private ConfigLoader configLoader;
     private ContentRenderManager contentRenderManager;
     private MetricsManager metricsManager;
+    private SecurityManager securityManager;
 
     @Override
     public void init() throws ServletException {
@@ -43,6 +45,53 @@ public class FrontControllerServlet extends HttpServlet {
         this.configLoader = new ConfigLoader();
         this.contentRenderManager = new ContentRenderManager();
         this.metricsManager = new MetricsManager();
+        this.securityManager = new SecurityManager();
+        
+        ServletContext ctx = getServletContext();
+        String userAttName = ctx.getInitParameter("security.user.attributeName");
+        String rolesAttNAme = ctx.getInitParameter("security.role.attributeName");
+
+        try {
+            logManager.insertLog("user att name :"+userAttName, LogStatus.INFO);
+            logManager.insertLog("roles att name :"+rolesAttNAme, LogStatus.INFO);
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+
+        securityManager.setConnectedUserVarName(userAttName);
+        securityManager.setUserRolesVarName(rolesAttNAme);
+
+        String securityEnabled = ctx.getInitParameter("security.enabled");
+        if (securityEnabled != null) {
+            securityManager.setEnabled(Boolean.parseBoolean(securityEnabled));
+        }
+        
+        String loginUrl = ctx.getInitParameter("security.loginUrl");
+        if (loginUrl != null && !loginUrl.isEmpty()) {
+            securityManager.setLoginUrl(loginUrl);
+        }
+        
+        String accessDeniedUrl =ctx.getInitParameter("security.accessDeniedUrl");
+        if (accessDeniedUrl != null && !accessDeniedUrl.isEmpty()) {
+            securityManager.setAccessDeniedUrl(accessDeniedUrl);
+        }
+        
+        String authProviderClass = ctx.getInitParameter("security.authenticationProvider");
+        if (authProviderClass != null && !authProviderClass.isEmpty()) {
+            try {
+                Class<?> providerClass = Class.forName(authProviderClass);
+                AuthenticationProvider provider = (AuthenticationProvider) providerClass.getDeclaredConstructor().newInstance();
+                securityManager.setAuthenticationProvider(provider);
+                logManager.insertLog("Authentication provider loaded: " + authProviderClass, LogStatus.INFO);
+            } catch (Exception e) {
+                try {
+                    logManager.insertLog("Failed to load authentication provider: " + e.getMessage(), LogStatus.ERROR);
+                } catch (IOException e1) {
+                    e1.printStackTrace();
+                }
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -121,6 +170,28 @@ public class FrontControllerServlet extends HttpServlet {
             if (mapSetting.containsKey("upload_path")) {
                 methodeManager.setFileSavePath(mapSetting.get("upload_path"));
             }
+            
+            if (servletContext.getAttribute("rolePermissionLoader") == null) {
+                mg.miniframework.modules.security.RolePermissionLoader loader = 
+                    new mg.miniframework.modules.security.RolePermissionLoader();
+                loader.loadFromConfig(mapSetting);
+                servletContext.setAttribute("rolePermissionLoader", loader);
+                securityManager.setRolePermissionLoader(loader);
+                
+                injectRolePermissionLoader(loader);
+                
+                try {
+                    logManager.insertLog("Security roles and permissions loaded from config", LogStatus.INFO);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            } else {
+                mg.miniframework.modules.security.RolePermissionLoader loader = 
+                    (mg.miniframework.modules.security.RolePermissionLoader) servletContext.getAttribute("rolePermissionLoader");
+                securityManager.setRolePermissionLoader(loader);
+                
+                injectRolePermissionLoader(loader);
+            }
 
             if (servletContext.getAttribute("routeMap") == null) {
                 RouteMap routeMap = new RouteMap();
@@ -197,6 +268,10 @@ public class FrontControllerServlet extends HttpServlet {
                     CachedMethodInfo cachedInfo = methodsMap.get(routeURL);
                     Method method = cachedInfo.getMethod();
 
+                    if (!securityManager.isAccessAllowed(method, req, resp)) {
+                        return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
+                    }
+
                     Map<String, String> pathParams = RoutePatternUtils.extractPathParams(
                             routeURL.getUrlPath(),
                             requestURL.getUrlPath());
@@ -242,11 +317,21 @@ public class FrontControllerServlet extends HttpServlet {
         out.println("<p><b>" + httpMethod + "</b> " + urlPath + "</p>");
         out.println("<ul>");
 
-        for (Map.Entry<Url, CachedMethodInfo> entry : routeMap.getUrlMethodsMap().entrySet()) {
-            out.println("<li>" + entry.getKey().getMethod()
-                    + " " + entry.getKey().getUrlPath() + "</li>");
-        }
 
+        routeMap.getUrlMethodsMap()
+        .entrySet()
+        .stream()
+        .sorted(Comparator.comparing(
+                e -> e.getKey().getUrlPath(),
+                String.CASE_INSENSITIVE_ORDER
+        ))
+        .forEach(entry -> {
+            out.println("<li>"
+                    + entry.getKey().getMethod()
+                    + " "
+                    + entry.getKey().getUrlPath()
+                    + "</li>");
+        });
     }
 
     private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass)
@@ -281,5 +366,34 @@ public class FrontControllerServlet extends HttpServlet {
         });
 
         return result;
+    }
+    
+    /**
+     * Injecte le RolePermissionLoader dans l'AuthenticationProvider via réflexion
+     * si le provider a une méthode setRolePermissionLoader
+     */
+    private void injectRolePermissionLoader(mg.miniframework.modules.security.RolePermissionLoader loader) {
+        AuthenticationProvider provider = securityManager.getAuthenticationProvider();
+        if (provider != null) {
+            try {
+                java.lang.reflect.Method setter = provider.getClass()
+                    .getMethod("setRolePermissionLoader", mg.miniframework.modules.security.RolePermissionLoader.class);
+                setter.invoke(provider, loader);
+                logManager.insertLog("RolePermissionLoader injected into AuthenticationProvider", LogStatus.DEBUG);
+            } catch (NoSuchMethodException e) {
+                // Le provider n'a pas de setter, ce n'est pas grave
+                try {
+                    logManager.insertLog("AuthenticationProvider does not have setRolePermissionLoader method", LogStatus.DEBUG);
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+            } catch (Exception e) {
+                try {
+                    logManager.insertLog("Failed to inject RolePermissionLoader: " + e.getMessage(), LogStatus.WARN);
+                } catch (IOException ex) {
+                    ex.printStackTrace();
+                }
+            }
+        }
     }
 }
