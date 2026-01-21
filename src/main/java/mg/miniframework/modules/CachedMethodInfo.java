@@ -83,5 +83,6 @@ public class CachedMethodInfo {
         public void setFormParamName(String formParamName) { this.formParamName = formParamName; }
         public boolean isRequired() { return required; }
         public void setRequired(boolean required) { this.required = required; }
-    }
+    
+}
 }

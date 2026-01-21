@@ -145,12 +145,6 @@ public class FrontControllerServlet extends HttpServlet {
                         RoutePatternUtils.convertRouteToPattern(entry.getKey().getUrlPath()));
             }
 
-            // for (Map.Entry<Url, Method> e : routeMap.getUrlMethodsMap().entrySet()) {
-            // routePatterns.put(
-            // e.getKey(),
-            // RoutePatternUtils.convertRouteToPattern(e.getKey().getUrlPath()));
-            // }
-
             Integer status = gererRoutes(
                     url,
                     routePatterns,
@@ -200,7 +194,7 @@ public class FrontControllerServlet extends HttpServlet {
                     Map<String, String> pathParams = RoutePatternUtils.extractPathParams(
                             routeURL.getUrlPath(),
                             requestURL.getUrlPath());
-
+                        
                     Object result = methodeManager.invokeCorrespondingMethod(
                             cachedInfo,
                             method.getDeclaringClass(),

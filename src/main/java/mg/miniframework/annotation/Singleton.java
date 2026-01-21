@@ -6,8 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 @Retention(RetentionPolicy.RUNTIME)
-@Target(ElementType.PARAMETER)
-public @interface RequestAttribute {
-    String paramName();
-    String defaultValue() default "";
+@Target(ElementType.TYPE)
+public @interface Singleton {
+    
 }
