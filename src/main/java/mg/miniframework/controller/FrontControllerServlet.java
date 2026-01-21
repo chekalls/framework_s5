@@ -21,6 +21,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import mg.miniframework.annotation.Controller;
 import mg.miniframework.annotation.JsonUrl;
 import mg.miniframework.modules.*;
+import mg.miniframework.modules.CachedMethodInfo;
 import mg.miniframework.modules.LogManager.LogStatus;
 import mg.miniframework.utils.RoutePatternUtils;
 
@@ -33,6 +34,7 @@ public class FrontControllerServlet extends HttpServlet {
     private LogManager logManager;
     private ConfigLoader configLoader;
     private ContentRenderManager contentRenderManager;
+    private MetricsManager metricsManager;
 
     @Override
     public void init() throws ServletException {
@@ -40,6 +42,7 @@ public class FrontControllerServlet extends HttpServlet {
         this.logManager = new LogManager();
         this.configLoader = new ConfigLoader();
         this.contentRenderManager = new ContentRenderManager();
+        this.metricsManager = new MetricsManager();
     }
 
     @SuppressWarnings("unchecked")
@@ -47,11 +50,22 @@ public class FrontControllerServlet extends HttpServlet {
     protected void service(HttpServletRequest req, HttpServletResponse resp)
             throws ServletException, IOException {
 
+        long startTime = System.currentTimeMillis();
+        metricsManager.incrementRequestCount();
+
         ServletContext servletContext = req.getServletContext();
         String requestURI = req.getRequestURI();
         String contextPath = req.getContextPath();
         String relativePath = requestURI.substring(contextPath.length());
         String realPath = servletContext.getRealPath(relativePath);
+
+        if (relativePath.equals("/metrics")) {
+            resp.setContentType("text/plain;charset=UTF-8");
+            resp.getWriter().print(metricsManager.exportMetrics());
+            long duration = System.currentTimeMillis() - startTime;
+            metricsManager.addRequestDuration(duration);
+            return;
+        }
 
         Map<String, String> requestData = Map.of("requestURI", requestURI, "contextPath", contextPath, "relativePath",
                 relativePath, "realPath", realPath);
@@ -104,8 +118,7 @@ public class FrontControllerServlet extends HttpServlet {
                 baseFile = mapSetting.get("jsp_base_path");
                 contentRenderManager.setBaseJspPath(baseFile);
             }
-            if(mapSetting.containsKey("upload_path")){
-                // logManager.insertLog("upload path", null);
+            if (mapSetting.containsKey("upload_path")) {
                 methodeManager.setFileSavePath(mapSetting.get("upload_path"));
             }
 
@@ -125,11 +138,18 @@ public class FrontControllerServlet extends HttpServlet {
             url.setUrlPath(relativePath);
 
             Map<Url, Pattern> routePatterns = new HashMap<>();
-            for (Map.Entry<Url, Method> e : routeMap.getUrlMethodsMap().entrySet()) {
+
+            for (Map.Entry<Url, CachedMethodInfo> entry : routeMap.getUrlMethodsMap().entrySet()) {
                 routePatterns.put(
-                        e.getKey(),
-                        RoutePatternUtils.convertRouteToPattern(e.getKey().getUrlPath()));
+                        entry.getKey(),
+                        RoutePatternUtils.convertRouteToPattern(entry.getKey().getUrlPath()));
             }
+
+            // for (Map.Entry<Url, Method> e : routeMap.getUrlMethodsMap().entrySet()) {
+            // routePatterns.put(
+            // e.getKey(),
+            // RoutePatternUtils.convertRouteToPattern(e.getKey().getUrlPath()));
+            // }
 
             Integer status = gererRoutes(
                     url,
@@ -142,7 +162,17 @@ public class FrontControllerServlet extends HttpServlet {
                 print404(req, resp, relativePath, req.getMethod(), routeMap);
             }
 
+            if (status.equals(RouteStatus.RETURN_TYPE_UNKNOWN.getCode())) {
+                metricsManager.incrementErrorCount();
+            }
+
+            long duration = System.currentTimeMillis() - startTime;
+            metricsManager.addRequestDuration(duration);
+
         } catch (Exception e) {
+            long duration = System.currentTimeMillis() - startTime;
+            metricsManager.addRequestDuration(duration);
+            metricsManager.incrementErrorCount();
             resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
             resp.getWriter().print("Erreur interne : " + e.getMessage());
         }
@@ -151,7 +181,7 @@ public class FrontControllerServlet extends HttpServlet {
     private Integer gererRoutes(
             Url requestURL,
             Map<Url, Pattern> routes,
-            Map<Url, Method> methodsMap,
+            Map<Url, CachedMethodInfo> methodsMap,
             HttpServletRequest req,
             HttpServletResponse resp) throws IOException {
 
@@ -164,14 +194,15 @@ public class FrontControllerServlet extends HttpServlet {
                     && requestURL.getMethod() == routeURL.getMethod()) {
 
                 try {
-                    Method method = methodsMap.get(routeURL);
+                    CachedMethodInfo cachedInfo = methodsMap.get(routeURL);
+                    Method method = cachedInfo.getMethod();
 
                     Map<String, String> pathParams = RoutePatternUtils.extractPathParams(
                             routeURL.getUrlPath(),
                             requestURL.getUrlPath());
 
                     Object result = methodeManager.invokeCorrespondingMethod(
-                            method,
+                            cachedInfo,
                             method.getDeclaringClass(),
                             pathParams,
                             req,
@@ -200,6 +231,8 @@ public class FrontControllerServlet extends HttpServlet {
             String urlPath, String httpMethod,
             RouteMap routeMap) throws IOException {
 
+        metricsManager.incrementErrorCount();
+
         resp.setStatus(HttpServletResponse.SC_NOT_FOUND);
         resp.setContentType("text/html;charset=UTF-8");
 
@@ -209,12 +242,11 @@ public class FrontControllerServlet extends HttpServlet {
         out.println("<p><b>" + httpMethod + "</b> " + urlPath + "</p>");
         out.println("<ul>");
 
-        for (Map.Entry<Url, Method> e : routeMap.getUrlMethodsMap().entrySet()) {
-            out.println("<li>" + e.getKey().getMethod()
-                    + " " + e.getKey().getUrlPath() + "</li>");
+        for (Map.Entry<Url, CachedMethodInfo> entry : routeMap.getUrlMethodsMap().entrySet()) {
+            out.println("<li>" + entry.getKey().getMethod()
+                    + " " + entry.getKey().getUrlPath() + "</li>");
         }
 
-        out.println("</ul></body></html>");
     }
 
     private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass)
