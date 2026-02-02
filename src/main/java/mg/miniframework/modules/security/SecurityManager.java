@@ -67,7 +67,12 @@ public class SecurityManager {
             User user = new User();
             user.setUsername(userConnected);
             user.setRoles(userRoles);
-            user.setAuthenticated(true);
+
+            if(userConnected!=null){
+                user.setAuthenticated(true);
+            }else{
+                user.setAuthenticated(false);
+            }
             return user;
         }
         return null;

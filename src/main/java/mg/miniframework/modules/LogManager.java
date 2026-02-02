@@ -8,9 +8,6 @@ import java.util.Date;
 
 public class LogManager {
 
-    // Use a relative path so logs are stored in the project's ./log folder by default.
-    // This makes the path portable across environments. You can override by setting
-    // the system property 'miniframework.logdir' if needed.
     private static String logBasePath = System.getProperty("miniframework.logdir", "log");
 
     public LogManager() {

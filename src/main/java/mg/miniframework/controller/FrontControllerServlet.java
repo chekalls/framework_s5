@@ -9,6 +9,9 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
 import java.util.regex.Pattern;
 
+import io.github.classgraph.ClassGraph;
+import io.github.classgraph.ClassInfo;
+import io.github.classgraph.ScanResult;
 import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletContext;
 import jakarta.servlet.ServletException;
@@ -37,6 +40,7 @@ public class FrontControllerServlet extends HttpServlet {
     private ContentRenderManager contentRenderManager;
     private MetricsManager metricsManager;
     private SecurityManager securityManager;
+    private String controllerPackage;
 
     @Override
     public void init() throws ServletException {
@@ -46,14 +50,14 @@ public class FrontControllerServlet extends HttpServlet {
         this.contentRenderManager = new ContentRenderManager();
         this.metricsManager = new MetricsManager();
         this.securityManager = new SecurityManager();
-        
+
         ServletContext ctx = getServletContext();
         String userAttName = ctx.getInitParameter("security.user.attributeName");
         String rolesAttNAme = ctx.getInitParameter("security.role.attributeName");
 
         try {
-            logManager.insertLog("user att name :"+userAttName, LogStatus.INFO);
-            logManager.insertLog("roles att name :"+rolesAttNAme, LogStatus.INFO);
+            logManager.insertLog("user att name :" + userAttName, LogStatus.INFO);
+            logManager.insertLog("roles att name :" + rolesAttNAme, LogStatus.INFO);
         } catch (IOException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
@@ -62,26 +66,34 @@ public class FrontControllerServlet extends HttpServlet {
         securityManager.setConnectedUserVarName(userAttName);
         securityManager.setUserRolesVarName(rolesAttNAme);
 
+        this.controllerPackage = ctx.getInitParameter("controller.package");
+        try {
+            logManager.insertLog("contoller base " + this.controllerPackage, LogStatus.INFO);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         String securityEnabled = ctx.getInitParameter("security.enabled");
         if (securityEnabled != null) {
             securityManager.setEnabled(Boolean.parseBoolean(securityEnabled));
         }
-        
+
         String loginUrl = ctx.getInitParameter("security.loginUrl");
         if (loginUrl != null && !loginUrl.isEmpty()) {
             securityManager.setLoginUrl(loginUrl);
         }
-        
-        String accessDeniedUrl =ctx.getInitParameter("security.accessDeniedUrl");
+
+        String accessDeniedUrl = ctx.getInitParameter("security.accessDeniedUrl");
         if (accessDeniedUrl != null && !accessDeniedUrl.isEmpty()) {
             securityManager.setAccessDeniedUrl(accessDeniedUrl);
         }
-        
+
         String authProviderClass = ctx.getInitParameter("security.authenticationProvider");
         if (authProviderClass != null && !authProviderClass.isEmpty()) {
             try {
                 Class<?> providerClass = Class.forName(authProviderClass);
-                AuthenticationProvider provider = (AuthenticationProvider) providerClass.getDeclaredConstructor().newInstance();
+                AuthenticationProvider provider = (AuthenticationProvider) providerClass.getDeclaredConstructor()
+                        .newInstance();
                 securityManager.setAuthenticationProvider(provider);
                 logManager.insertLog("Authentication provider loaded: " + authProviderClass, LogStatus.INFO);
             } catch (Exception e) {
@@ -170,26 +182,25 @@ public class FrontControllerServlet extends HttpServlet {
             if (mapSetting.containsKey("upload_path")) {
                 methodeManager.setFileSavePath(mapSetting.get("upload_path"));
             }
-            
+
             if (servletContext.getAttribute("rolePermissionLoader") == null) {
-                mg.miniframework.modules.security.RolePermissionLoader loader = 
-                    new mg.miniframework.modules.security.RolePermissionLoader();
+                mg.miniframework.modules.security.RolePermissionLoader loader = new mg.miniframework.modules.security.RolePermissionLoader();
                 loader.loadFromConfig(mapSetting);
                 servletContext.setAttribute("rolePermissionLoader", loader);
                 securityManager.setRolePermissionLoader(loader);
-                
+
                 injectRolePermissionLoader(loader);
-                
+
                 try {
                     logManager.insertLog("Security roles and permissions loaded from config", LogStatus.INFO);
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
             } else {
-                mg.miniframework.modules.security.RolePermissionLoader loader = 
-                    (mg.miniframework.modules.security.RolePermissionLoader) servletContext.getAttribute("rolePermissionLoader");
+                mg.miniframework.modules.security.RolePermissionLoader loader = (mg.miniframework.modules.security.RolePermissionLoader) servletContext
+                        .getAttribute("rolePermissionLoader");
                 securityManager.setRolePermissionLoader(loader);
-                
+
                 injectRolePermissionLoader(loader);
             }
 
@@ -197,6 +208,11 @@ public class FrontControllerServlet extends HttpServlet {
                 RouteMap routeMap = new RouteMap();
                 List<Class<?>> controllers = trouverClassesAvecAnnotation(Controller.class);
                 for (Class<?> c : controllers) {
+                    logManager.insertLog("===================================================================",
+                            LogStatus.INFO);
+                    logManager.insertLog("" + c.getSimpleName(), LogStatus.INFO);
+                    logManager.insertLog("===================================================================",
+                            LogStatus.INFO);
                     routeMap.addController(c);
                 }
                 servletContext.setAttribute("routeMap", routeMap);
@@ -317,21 +333,52 @@ public class FrontControllerServlet extends HttpServlet {
         out.println("<p><b>" + httpMethod + "</b> " + urlPath + "</p>");
         out.println("<ul>");
 
-
         routeMap.getUrlMethodsMap()
-        .entrySet()
-        .stream()
-        .sorted(Comparator.comparing(
-                e -> e.getKey().getUrlPath(),
-                String.CASE_INSENSITIVE_ORDER
-        ))
-        .forEach(entry -> {
-            out.println("<li>"
-                    + entry.getKey().getMethod()
-                    + " "
-                    + entry.getKey().getUrlPath()
-                    + "</li>");
-        });
+                .entrySet()
+                .stream()
+                .sorted(Comparator.comparing(
+                        e -> e.getKey().getUrlPath(),
+                        String.CASE_INSENSITIVE_ORDER))
+                .forEach(entry -> {
+                    out.println("<li>"
+                            + entry.getKey().getMethod()
+                            + " "
+                            + entry.getKey().getUrlPath()
+                            + "</li>");
+                });
+    }
+
+    private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass, String basePackage)
+            throws IOException {
+        List<Class<?>> result = new ArrayList<>();
+
+        try (ScanResult scanResult = new ClassGraph()
+                .enableAllInfo()
+                .acceptPackages(basePackage)
+                .scan()) {
+
+            for (ClassInfo ci : scanResult.getClassesWithAnnotation(annotationClass.getName())) {
+                try {
+                    Class<?> clazz = ci.loadClass();
+                    result.add(clazz);
+                    logManager.insertLog("===================================================================",
+                            LogStatus.INFO);
+                    logManager.insertLog("" + clazz.getSimpleName(), LogStatus.INFO);
+                    logManager.insertLog("===================================================================",
+                            LogStatus.INFO);
+                    logManager.insertLog("Controller found: " + clazz.getName(), LogStatus.INFO);
+                } catch (Throwable e) {
+                    logManager.insertLog(
+                            "Erreur lors du chargement de " + ci.getName() + " : " + e,
+                            LogStatus.ERROR);
+                }
+            }
+
+        } catch (Throwable e) {
+            logManager.insertLog("Erreur lors du scan des classes : " + e, LogStatus.ERROR);
+        }
+
+        return result;
     }
 
     private List<Class<?>> trouverClassesAvecAnnotation(Class<?> annotationClass)
@@ -367,7 +414,7 @@ public class FrontControllerServlet extends HttpServlet {
 
         return result;
     }
-    
+
     /**
      * Injecte le RolePermissionLoader dans l'AuthenticationProvider via réflexion
      * si le provider a une méthode setRolePermissionLoader
@@ -377,13 +424,15 @@ public class FrontControllerServlet extends HttpServlet {
         if (provider != null) {
             try {
                 java.lang.reflect.Method setter = provider.getClass()
-                    .getMethod("setRolePermissionLoader", mg.miniframework.modules.security.RolePermissionLoader.class);
+                        .getMethod("setRolePermissionLoader",
+                                mg.miniframework.modules.security.RolePermissionLoader.class);
                 setter.invoke(provider, loader);
                 logManager.insertLog("RolePermissionLoader injected into AuthenticationProvider", LogStatus.DEBUG);
             } catch (NoSuchMethodException e) {
                 // Le provider n'a pas de setter, ce n'est pas grave
                 try {
-                    logManager.insertLog("AuthenticationProvider does not have setRolePermissionLoader method", LogStatus.DEBUG);
+                    logManager.insertLog("AuthenticationProvider does not have setRolePermissionLoader method",
+                            LogStatus.DEBUG);
                 } catch (IOException ex) {
                     ex.printStackTrace();
                 }
