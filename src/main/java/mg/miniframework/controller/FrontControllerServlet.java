@@ -55,7 +55,6 @@ public class FrontControllerServlet extends HttpServlet {
             logManager.insertLog("user att name :"+userAttName, LogStatus.INFO);
             logManager.insertLog("roles att name :"+rolesAttNAme, LogStatus.INFO);
         } catch (IOException e) {
-            // TODO Auto-generated catch block
             e.printStackTrace();
         }
 
@@ -244,8 +243,26 @@ public class FrontControllerServlet extends HttpServlet {
             long duration = System.currentTimeMillis() - startTime;
             metricsManager.addRequestDuration(duration);
             metricsManager.incrementErrorCount();
+            // Log exception details to help debugging
+            try {
+                logManager.insertLog("Erreur interne: " + e.toString(), LogStatus.ERROR);
+                java.io.StringWriter sw = new java.io.StringWriter();
+                e.printStackTrace(new java.io.PrintWriter(sw));
+                logManager.insertLog(sw.toString(), LogStatus.ERROR);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
             resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            resp.getWriter().print("Erreur interne : " + e.getMessage());
+            // Also write stacktrace to response for debugging
+            resp.setContentType("text/plain;charset=UTF-8");
+            try {
+                resp.getWriter().println("Erreur interne : " + e.toString());
+                java.io.StringWriter sw2 = new java.io.StringWriter();
+                e.printStackTrace(new java.io.PrintWriter(sw2));
+                resp.getWriter().println(sw2.toString());
+            } catch (java.io.IOException ioex) {
+                ioex.printStackTrace();
+            }
         }
     }
 
@@ -265,6 +282,11 @@ public class FrontControllerServlet extends HttpServlet {
                     && requestURL.getMethod() == routeURL.getMethod()) {
 
                 try {
+                    try {
+                        logManager.insertLog("Route matched: " + routeURL.getUrlPath() + " (http: " + routeURL.getMethod() + ")", LogStatus.DEBUG);
+                    } catch (IOException ioex) {
+                        ioex.printStackTrace();
+                    }
                     CachedMethodInfo cachedInfo = methodsMap.get(routeURL);
                     Method method = cachedInfo.getMethod();
 
@@ -276,12 +298,24 @@ public class FrontControllerServlet extends HttpServlet {
                             routeURL.getUrlPath(),
                             requestURL.getUrlPath());
 
+                    try {
+                        logManager.insertLog("Invoking method: " + method.getDeclaringClass().getName() + "#" + method.getName(), LogStatus.DEBUG);
+                    } catch (IOException ioex) {
+                        ioex.printStackTrace();
+                    }
+
                     Object result = methodeManager.invokeCorrespondingMethod(
                             cachedInfo,
                             method.getDeclaringClass(),
                             pathParams,
                             req,
                             resp);
+
+                    try {
+                        logManager.insertLog("Method invoked successfully: " + method.getDeclaringClass().getName() + "#" + method.getName(), LogStatus.DEBUG);
+                    } catch (IOException ioex) {
+                        ioex.printStackTrace();
+                    }
 
                     if (method.isAnnotationPresent(JsonUrl.class)) {
                         resp.setContentType("application/json;charset=UTF-8");
@@ -291,9 +325,22 @@ public class FrontControllerServlet extends HttpServlet {
                     }
 
                     return contentRenderManager.renderContent(result, req, resp);
-
                 } catch (Exception e) {
-                    out.print("Erreur interne : " + e.getMessage());
+                    try {
+                        logManager.insertLog("Erreur interne: " + e.toString(), LogStatus.ERROR);
+                        java.io.StringWriter sw = new java.io.StringWriter();
+                        e.printStackTrace(new java.io.PrintWriter(sw));
+                        logManager.insertLog(sw.toString(), LogStatus.ERROR);
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                    // Also write stacktrace to response (temporary, for debugging)
+                    out.print("Erreur interne : " + e.toString());
+                    out.print("<pre>");
+                    java.io.StringWriter sw2 = new java.io.StringWriter();
+                    e.printStackTrace(new java.io.PrintWriter(sw2));
+                    out.print(sw2.toString().replaceAll("<","&lt;"));
+                    out.print("</pre>");
                     return RouteStatus.RETURN_TYPE_UNKNOWN.getCode();
                 }
             }

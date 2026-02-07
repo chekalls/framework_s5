@@ -9,6 +9,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
+import java.lang.reflect.Modifier;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -56,34 +57,45 @@ public class MethodManager {
 
         String basePrefix = (prefix == null || prefix.isEmpty()) ? className : prefix;
 
-        Constructor<?> constructor = clazz.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Object instance = constructor.newInstance();
+// Do not instantiate primitives, wrappers or String as complex objects
+if (DataTypeUtils.isPrimitiveOrWrapper(clazz) || clazz.equals(String.class)) {
+    logManager.insertLog("primitive or String detected for object creation: " + clazz.getName(), LogStatus.DEBUG);
+    return null;
+}
 
-        for (int n = 0; n < classFields.length; n++) {
-            Field field = classFields[n];
-            field.setAccessible(true);
+Constructor<?> constructor = clazz.getDeclaredConstructor();
+constructor.setAccessible(true);
+Object instance = constructor.newInstance();
 
-            if (!DataTypeUtils.isArrayType(field.getType())) {
-                String attributeName = (basePrefix + "." + field.getName()).strip();
-                logManager.insertLog(
-                        "---- object parameter found :[" + field.getName() + " ::'" + field.getType().getName()
-                                + "'] => " + attributeName,
-                        LogStatus.DEBUG);
+for (int n = 0; n < classFields.length; n++) {
+    Field field = classFields[n];
+    // skip static fields (avoid touching final static fields like String.serialPersistentFields)
+    if (Modifier.isStatic(field.getModifiers())) {
+        logManager.insertLog("skipping static field: " + field.getName(), LogStatus.DEBUG);
+        continue;
+    }
+    field.setAccessible(true);
 
-                String fieldValue = request.getParameter(attributeName);
+    if (!DataTypeUtils.isArrayType(field.getType())) {
+        String attributeName = (basePrefix + "." + field.getName()).strip();
+        logManager.insertLog(
+                "---- object parameter found :[" + field.getName() + " ::'" + field.getType().getName()
+                        + "'] => " + attributeName,
+                LogStatus.DEBUG);
 
-                if (fieldValue != null && !fieldValue.isEmpty()) {
-                    Object converted = DataTypeUtils.convertParam(fieldValue, field.getType());
-                    field.set(instance, converted);
-                } else if (!DataTypeUtils.isPrimitiveOrWrapper(field.getType())
-                        && !field.getType().equals(String.class)) {
-                    Object subObject = getObjectInstanceFromRequest(field.getType(), request, attributeName);
-                    field.set(instance, subObject);
-                }
-            } else {
-                logManager.insertLog("class foundd ===>" + DataTypeUtils.getContentType(field).getSimpleName(),
-                        LogStatus.DEBUG);
+        String fieldValue = request.getParameter(attributeName);
+
+        if (fieldValue != null && !fieldValue.isEmpty()) {
+            Object converted = DataTypeUtils.convertParam(fieldValue, field.getType());
+            field.set(instance, converted);
+        } else if (!DataTypeUtils.isPrimitiveOrWrapper(field.getType())
+                && !field.getType().equals(String.class)) {
+            Object subObject = getObjectInstanceFromRequest(field.getType(), request, attributeName);
+            field.set(instance, subObject);
+        }
+    } else {
+        logManager.insertLog("class foundd ===>" + DataTypeUtils.getContentType(field).getSimpleName(),
+                LogStatus.DEBUG);
                 if (DataTypeUtils.isPrimitiveOrWrapper(DataTypeUtils.getContentType(field))) {
                     logManager.insertLog("is primitive", LogStatus.DEBUG);
 
@@ -267,7 +279,31 @@ public class MethodManager {
                         argValue = Collections.emptyMap();
                     }
                 } else {
-                    argValue = getObjectInstanceFromRequest(info.getType(), request, "");
+                    // If the expected type is a primitive, wrapper or String, try to map directly from request parameters
+                    if (DataTypeUtils.isPrimitiveOrWrapper(info.getType()) || info.getType().equals(String.class)) {
+                        String paramName = null;
+                        try {
+                            paramName = info.getParameterName();
+                        } catch (Throwable t) {
+                            // ignore
+                        }
+
+                        String rawValue = null;
+                        if (paramName != null && !paramName.isEmpty()) {
+                            rawValue = request.getParameter(paramName);
+                            if (rawValue == null && params != null) {
+                                rawValue = params.get(paramName);
+                            }
+                        }
+
+                        if (rawValue != null) {
+                            argValue = DataTypeUtils.convertParam(rawValue, info.getType());
+                        } else {
+                            argValue = null;
+                        }
+                    } else {
+                        argValue = getObjectInstanceFromRequest(info.getType(), request, "");
+                    }
                 }
             }
 

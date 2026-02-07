@@ -27,6 +27,8 @@ public class CachedMethodInfo {
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             ParameterInfo info = new ParameterInfo(param.getType(), param.getParameterizedType());
+            // store the parameter name (requires -parameters at compile time to be meaningful)
+            info.setParameterName(param.getName());
 
             UrlParam urlParam = param.getAnnotation(UrlParam.class);
             if (urlParam != null) {
@@ -72,6 +74,7 @@ public class CachedMethodInfo {
         private String formParamName;
         private boolean required;
         private boolean isSessionVariables;
+        private String parameterName; // actual method parameter name (if compiled with -parameters)
 
         public ParameterInfo(Class<?> type, java.lang.reflect.Type genericType) {
             this.type = type;
@@ -97,6 +100,14 @@ public class CachedMethodInfo {
 
         public void setSessionVariables(boolean isSessionVariables) {
             this.isSessionVariables = isSessionVariables;
+        }
+
+        public String getParameterName() {
+            return parameterName;
+        }
+
+        public void setParameterName(String parameterName) {
+            this.parameterName = parameterName;
         }
     }
 }
